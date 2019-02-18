@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2018-11-20
+# 2019-01-16
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -13,6 +13,7 @@ import re
 import requests
 import base64
 from requests.auth import HTTPDigestAuth
+from requests.auth import HTTPBasicAuth
 from xml.etree import ElementTree
 from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
@@ -20,11 +21,11 @@ from Crypto.PublicKey import RSA
 
 cam_ips = [
     # (      OLD     ,        NEW      )
-    ('10.145.17.230', '10.145.17.200')
+    ('192.168.1.201', '192.168.1.201')
 ]
 
-new_gateway = '10.145.17.1'
-new_ntp = '10.1.5.3'
+new_gateway = '192.168.1.1'
+new_ntp = '192.168.1.1'
 time_zone_gmt_offset = '+5:00:00'
 
 admin_user_name = 'admin'
@@ -46,17 +47,17 @@ h264_stream_framerate = 10
 
 # ============================= MAIN WORK ===============================
 
-def set_cam_options(current_cam_ip, current_password, new_cam_ip):
+def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # comment unneeded steps
-    set_video_user(current_cam_ip, current_password)
-    set_time(current_cam_ip, current_password)
-    set_ntp(current_cam_ip, current_password)
-    set_osd(current_cam_ip, current_password)
-    set_off_ip_ban_option(current_cam_ip, current_password)
-    set_video(current_cam_ip, current_password)
-    set_ip(current_cam_ip, new_cam_ip, current_password)
-    set_password(current_cam_ip, current_password)
-    reboot_cam(current_cam_ip)
+    set_video_user(auth_type, current_cam_ip, current_password)
+    set_time(auth_type, current_cam_ip, current_password)
+    set_ntp(auth_type, current_cam_ip, current_password)
+    set_osd(auth_type, current_cam_ip, current_password)
+    set_off_ip_ban_option(auth_type, current_cam_ip, current_password)
+    set_video(auth_type, current_cam_ip, current_password)
+    set_ip(auth_type, current_cam_ip, new_cam_ip, current_password)
+    set_password(auth_type, current_cam_ip, current_password)
+    reboot_cam(auth_type, current_cam_ip)
 
 
 # ============================= URLS ===============================
@@ -354,15 +355,38 @@ video_user_permissions_set_request = """\
 # ==================================================================
 
 
-def get_auth(name, password):
-    return HTTPDigestAuth(name, password)
+class AuthType:
+    BASIC = 1,
+    DIGEST = 2,
+    UNAUTHORISED = 3
+
+
+def get_auth_type(cam_ip, password):
+    request = requests.get(get_service_url(cam_ip, time_url), auth=HTTPBasicAuth(admin_user_name, password))
+    if request.ok:
+        return AuthType.BASIC
+
+    request = requests.get(get_service_url(cam_ip, time_url), auth=HTTPDigestAuth(admin_user_name, password))
+    if request.ok:
+        return AuthType.DIGEST
+
+    return AuthType.UNAUTHORISED
+
+
+def get_auth(auth_type, name, password):
+    if auth_type == AuthType.BASIC:
+        return HTTPBasicAuth(name, password)
+    elif auth_type == AuthType.DIGEST:
+        return HTTPDigestAuth(name, password)
+    else:
+        return None
 
 
 def get_service_url(cam_ip, relative_url):
     return 'http://' + cam_ip + relative_url
 
 
-def set_password(cam_ip, password):
+def set_password(auth_type, cam_ip, password):
     request = ElementTree.fromstring(password_set_request)
 
     pass_element = request.find('password')
@@ -370,10 +394,10 @@ def set_password(cam_ip, password):
 
     request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
 
-    process_request(cam_ip, password_url, password, request_data, 'Password set')
+    process_request(auth_type, cam_ip, password_url, password, request_data, 'Password set')
 
 
-def set_ntp(cam_ip, password):
+def set_ntp(auth_type, cam_ip, password):
     request = ElementTree.fromstring(ntp_set_request)
 
     server_element = request.find('NTPServer')
@@ -382,10 +406,10 @@ def set_ntp(cam_ip, password):
 
     request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
 
-    process_request(cam_ip, ntp_url, password, request_data, 'NTP set')
+    process_request(auth_type, cam_ip, ntp_url, password, request_data, 'NTP set')
 
 
-def set_ip(cam_ip, new_ip, password):
+def set_ip(auth_type, cam_ip, new_ip, password):
     request = ElementTree.fromstring(ip_set_request)
 
     ip_element = request.find('ipAddress')
@@ -399,10 +423,10 @@ def set_ip(cam_ip, new_ip, password):
 
     message = 'IP set to %s, gateway %s' % (new_ip, new_gateway)
 
-    process_request(cam_ip, ip_url, password, request_data, message, 'Reboot Required')
+    process_request(auth_type, cam_ip, ip_url, password, request_data, message, 'Reboot Required')
 
 
-def set_video(cam_ip, password):
+def set_video(auth_type, cam_ip, password):
     request = ElementTree.fromstring(video_set_request)
 
     channels = request.findall('StreamingChannel')
@@ -425,27 +449,27 @@ def set_video(cam_ip, password):
 
     request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
 
-    process_request(cam_ip, video_url, password, request_data, 'Video streams set')
+    process_request(auth_type, cam_ip, video_url, password, request_data, 'Video streams set')
 
 
-def reboot_cam(cam_ip):
-    request = requests.put(get_service_url(cam_ip, reboot_url), auth=get_auth(admin_user_name, admin_new_password), data=[])
+def reboot_cam(auth_type, cam_ip):
+    request = requests.put(get_service_url(cam_ip, reboot_url), auth=get_auth(auth_type, admin_user_name, admin_new_password), data=[])
     answer_text = request.text
 
     print_answer_status('Reboot', answer_text, 'OK')
 
 
-def set_osd(cam_ip, password):
-    process_request(cam_ip, osd_url, password, osd_set_request, 'OSD set')
+def set_osd(auth_type, cam_ip, password):
+    process_request(auth_type, cam_ip, osd_url, password, osd_set_request, 'OSD set')
 
 
-def set_off_ip_ban_option(cam_ip, password):
-    if is_ip_ban_option_presented(cam_ip, password):
-        process_request(cam_ip, ip_ban_option_url, password, ip_ban_option_set_request, 'IP ban option unset')
+def set_off_ip_ban_option(auth_type, cam_ip, password):
+    if is_ip_ban_option_presented(auth_type, cam_ip, password):
+        process_request(auth_type, cam_ip, ip_ban_option_url, password, ip_ban_option_set_request, 'IP ban option unset')
 
 
-def is_ip_ban_option_presented(cam_ip, password):
-    request = requests.get(get_service_url(cam_ip, ip_ban_option_url), auth=get_auth(admin_user_name, password))
+def is_ip_ban_option_presented(auth_type, cam_ip, password):
+    request = requests.get(get_service_url(cam_ip, ip_ban_option_url), auth=get_auth(auth_type, admin_user_name, password))
     answer_text = request.text
 
     answer_xml = ElementTree.fromstring(answer_text)
@@ -460,7 +484,7 @@ def is_ip_ban_option_presented(cam_ip, password):
 # =========================================== TIME =================================================
 
 
-def set_time(cam_ip, password):
+def set_time(auth_type, cam_ip, password):
     if timezone_has_right_format(time_zone_gmt_offset):
         camera_timezone = convert_gmt_offset_to_internal_timezone(time_zone_gmt_offset)
 
@@ -471,7 +495,7 @@ def set_time(cam_ip, password):
 
         request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
 
-        process_request(cam_ip, time_url, password, request_data, 'Time set')
+        process_request(auth_type, cam_ip, time_url, password, request_data, 'Time set')
 
     else:
         print("Wrong timezone format")
@@ -582,7 +606,7 @@ def send_public_key(cam_ip, private_key):
 
     request_data = ElementTree.tostring(request_xml, encoding='utf8', method='xml')
 
-    request_xml = requests.post(get_service_url(cam_ip, public_key_url), auth=get_auth(admin_user_name, admin_old_password), data=request_data)
+    request_xml = requests.post(get_service_url(cam_ip, public_key_url), data=request_data)
     answer_text = request_xml.text
 
     return answer_text
@@ -595,7 +619,7 @@ def process_activation_request(cam_ip, pass_encrypted_encoded):
 
     request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
 
-    process_request(cam_ip, activation_url, admin_old_password, request_data, 'Activation')
+    process_request(AuthType.UNAUTHORISED, cam_ip, activation_url, admin_old_password, request_data, 'Activation')
 
 
 # ========================================= VIDEO USER ===========================================================
@@ -608,23 +632,23 @@ class User:
         self.is_valid = False
 
 
-def set_video_user(cam_ip, admin_password):
-    user = find_video_user(cam_ip, admin_password, video_user_name)
+def set_video_user(auth_type, cam_ip, admin_password):
+    user = find_video_user(auth_type, cam_ip, admin_password, video_user_name)
 
     if user.is_valid:
         print("Video user is presented")
         user.password = video_user_password
-        set_video_user_password(cam_ip, admin_password, user)
+        set_video_user_password(auth_type, cam_ip, admin_password, user)
     else:
-        add_video_user(cam_ip, admin_password)
+        add_video_user(auth_type, cam_ip, admin_password)
 
-        new_user = find_video_user(cam_ip, admin_password, video_user_name)
+        new_user = find_video_user(auth_type, cam_ip, admin_password, video_user_name)
         if new_user.is_valid:
-            set_video_user_permissions(cam_ip, admin_password, new_user)
+            set_video_user_permissions(auth_type, cam_ip, admin_password, new_user)
 
 
-def find_video_user(cam_ip, admin_password, user_name):
-    request = requests.get(get_service_url(cam_ip, users_url), auth=get_auth(admin_user_name, admin_password))
+def find_video_user(auth_type, cam_ip, admin_password, user_name):
+    request = requests.get(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password))
     answer_text = request.text
 
     answer_xml = ElementTree.fromstring(answer_text)
@@ -650,7 +674,7 @@ def find_video_user(cam_ip, admin_password, user_name):
     return user
 
 
-def set_video_user_password(cam_ip, admin_password, user):
+def set_video_user_password(auth_type, cam_ip, admin_password, user):
     user_element = ElementTree.fromstring(password_set_request)
 
     user_id_element = user_element.find('id')
@@ -664,10 +688,10 @@ def set_video_user_password(cam_ip, admin_password, user):
 
     request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
 
-    process_request(cam_ip, users_url, admin_password, request_text, 'Video user password updating')
+    process_request(auth_type, cam_ip, users_url, admin_password, request_text, 'Video user password updating')
 
 
-def add_video_user(cam_ip, admin_password):
+def add_video_user(auth_type, cam_ip, admin_password):
     user_element = ElementTree.fromstring(add_user_request)
 
     user_name_element = user_element.find('userName')
@@ -677,14 +701,14 @@ def add_video_user(cam_ip, admin_password):
     password_element.text = video_user_password
 
     request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
-    answer = requests.post(get_service_url(cam_ip, users_url), auth=get_auth(admin_user_name, admin_password), data=request_text)
+    answer = requests.post(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password), data=request_text)
 
     answer_text = answer.text
     print_answer_status('Adding video user', answer_text, 'OK')
 
 
-def set_video_user_permissions(cam_ip, admin_password, user):
-    permissions_id = find_video_permissions_id(cam_ip, admin_password, user)
+def set_video_user_permissions(auth_type, cam_ip, admin_password, user):
+    permissions_id = find_video_permissions_id(auth_type, cam_ip, admin_password, user)
 
     permissions = ElementTree.fromstring(video_user_permissions_set_request)
 
@@ -708,11 +732,11 @@ def set_video_user_permissions(cam_ip, admin_password, user):
 
     request_text = ElementTree.tostring(permissions, encoding='utf8', method='xml')
 
-    process_request(cam_ip, permissons_url + '/' + user.id, admin_password, request_text, 'Video user permissions')
+    process_request(auth_type, cam_ip, permissons_url + '/' + user.id, admin_password, request_text, 'Video user permissions')
 
 
-def find_video_permissions_id(cam_ip, admin_password, user):
-    request = requests.get(get_service_url(cam_ip, permissons_url), auth=get_auth(admin_user_name, admin_password))
+def find_video_permissions_id(auth_type, cam_ip, admin_password, user):
+    request = requests.get(get_service_url(cam_ip, permissons_url), auth=get_auth(auth_type, admin_user_name, admin_password))
     answer_text = request.text
 
     answer_xml = ElementTree.fromstring(answer_text)
@@ -739,8 +763,8 @@ def find_video_permissions_id(cam_ip, admin_password, user):
 # ================================================================================================================
 
 
-def process_request(cam_ip, request_url, password, request_data, operation, expected_status_text='OK'):
-    request = requests.put(get_service_url(cam_ip, request_url), auth=get_auth(admin_user_name, password), data=request_data)
+def process_request(auth_type, cam_ip, request_url, password, request_data, operation, expected_status_text='OK'):
+    request = requests.put(get_service_url(cam_ip, request_url), auth=get_auth(auth_type, admin_user_name, password), data=request_data)
     answer_text = request.text
 
     print_answer_status(operation, answer_text, expected_status_text)
@@ -798,7 +822,11 @@ def main():
 
             try:
                 current_password = set_activation(current_cam_ip)
-                set_cam_options(current_cam_ip, current_password, new_cam_ip)
+                auth_type = get_auth_type(current_cam_ip, current_password)
+                if auth_type == AuthType.UNAUTHORISED:
+                    raise RuntimeError("Unauthorised! Check login and password")
+
+                set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip)
 
             except RuntimeError as e:
                 print(e.message)
