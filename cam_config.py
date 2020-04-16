@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2020-03-24
+# 2020-04-16
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -22,7 +22,7 @@ from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 from sys import stdout
 
-new_ntp = '10.1.5.3'
+new_ntp = '10.10.10.10'
 time_zone_gmt_offset = '+5:00:00'
 
 admin_user_name = 'admin'
