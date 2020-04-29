@@ -90,7 +90,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # ====================================================================
 
     # set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
-    # set_password(auth_type, current_cam_ip, current_password)
+    set_password(auth_type, current_cam_ip, current_password, admin_new_password)
     # reboot_cam(auth_type, current_cam_ip)
     pass
 
@@ -613,12 +613,12 @@ def check_password(password):
         return False
 
 
-def set_password(auth_type, cam_ip, password):
-    if check_password(password):
+def set_password(auth_type, cam_ip, password, new_password):
+    if check_password(new_password):
         request = ElementTree.fromstring(user_password_xml)
 
         pass_element = request.find('password')
-        pass_element.text = admin_new_password
+        pass_element.text = new_password
 
         request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
 
