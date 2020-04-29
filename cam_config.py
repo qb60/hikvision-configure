@@ -9,19 +9,6 @@
 # pip install --user pycrypto
 # pip install --user requests
 
-import re
-import requests
-import base64
-import time
-import sys
-import ipaddress
-from requests.auth import HTTPDigestAuth
-from requests.auth import HTTPBasicAuth
-from xml.etree import ElementTree
-from Crypto.Cipher import AES
-from Crypto.PublicKey import RSA
-from sys import stdout
-
 new_ntp = '10.10.10.10'
 time_zone_gmt_offset = '+5:00:00'
 
@@ -94,6 +81,21 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # reboot_cam(auth_type, current_cam_ip)
     pass
 
+
+# ==================================================================
+
+import re
+import requests
+import base64
+import time
+import sys
+import ipaddress
+from requests.auth import HTTPDigestAuth
+from requests.auth import HTTPBasicAuth
+from xml.etree import ElementTree
+from Crypto.Cipher import AES
+from Crypto.PublicKey import RSA
+from sys import stdout
 
 # ============================= URLS ===============================
 
