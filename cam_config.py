@@ -90,7 +90,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # ====================================================================
 
     # set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
-    set_password(auth_type, current_cam_ip, current_password, admin_new_password)
+    # set_password(auth_type, current_cam_ip, current_password, admin_new_password)
     # reboot_cam(auth_type, current_cam_ip)
     pass
 
