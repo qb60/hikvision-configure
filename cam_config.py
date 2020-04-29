@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2020-04-16
+# 2020-04-29
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -55,11 +55,11 @@ record_audio = False
 primary_dns = '5.5.5.5'
 secondary_dns = '8.8.8.8'
 
-sender_email = 'info@exmaple.com'
+sender_email = 'info@example.com'
 sender_name_prefix = 'ip-cam-'
-smtp_server = 'smtp.exmaple.com'
-notification_email1 = 'admin1@exmaple.com'
-notification_email2 = 'admin2@exmaple.com'
+smtp_server = 'smtp.example.com'
+notification_email1 = 'admin1@example.com'
+notification_email2 = 'admin2@example.com'
 notification_email3 = ''
 
 
@@ -69,6 +69,7 @@ notification_email3 = ''
 def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # COMMENT UNNEEDED STEPS
 
+    # print_users_list(auth_type, current_cam_ip, current_password)
     # set_video_user(auth_type, current_cam_ip, current_password)
     # set_ntp(auth_type, current_cam_ip, current_password)
     # set_time(auth_type, current_cam_ip, current_password)
@@ -987,6 +988,25 @@ class User:
         self.is_valid = False
 
 
+def print_users_list(auth_type, cam_ip, admin_password):
+    request = requests.get(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password))
+    answer_text = request.text
+
+    answer_xml = ElementTree.fromstring(answer_text)
+    namespace = get_namespace(answer_xml)
+
+    user_elements = answer_xml.findall(namespace + 'User')
+
+    users = []
+    for user_element in user_elements:
+        username_element = user_element.find(namespace + 'userName')
+        if username_element is not None:
+            username = username_element.text
+            users.append(username)
+
+    print('Users: {}'.format(users))
+
+
 def set_video_user(auth_type, cam_ip, admin_password):
     user = find_video_user(auth_type, cam_ip, admin_password, video_user_name)
 
@@ -1321,7 +1341,7 @@ def get_formatting_status(authenticator, cam_ip):
 def print_device_info(auth_type, cam_ip, password):
     request = requests.get(get_service_url(cam_ip, device_info_url), auth=get_auth(auth_type, admin_user_name, password))
     answer_text = clear_xml_from_namespaces(request.text)
-    device_info = ElementTree.fromstring(answer_text)
+    device_info = ElementTree.fromstring(answer_text.encode('utf-8'))
 
     model = device_info.find('model').text
     mac = device_info.find('macAddress').text
