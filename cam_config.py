@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2020-04-29
+# 2020-04-30
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -49,6 +49,7 @@ notification_email1 = 'admin1@example.com'
 notification_email2 = 'admin2@example.com'
 notification_email3 = ''
 
+# from params import *
 
 # ============================= MAIN WORK ===============================
 
@@ -56,13 +57,14 @@ notification_email3 = ''
 def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # COMMENT UNNEEDED STEPS
 
-    # print_users_list(auth_type, current_cam_ip, current_password)
     # set_video_user(auth_type, current_cam_ip, current_password)
+    # print_users_list(auth_type, current_cam_ip, current_password)
     # set_ntp(auth_type, current_cam_ip, current_password)
     # set_time(auth_type, current_cam_ip, current_password)
     # set_osd(auth_type, current_cam_ip, current_password)
     # set_off_ip_ban_option(auth_type, current_cam_ip, current_password)
     # set_video_streams(auth_type, current_cam_ip, current_password)
+    # set_cloud_parameters(auth_type, current_cam_ip, current_password)
 
     # =========== for offices - motion detection and so on ===============
     # set_no_beep_event_trigger(auth_type, current_cam_ip, current_password)
@@ -107,12 +109,14 @@ video_url = '/ISAPI/Streaming/channels'
 video_capabilities_url = '/ISAPI/Streaming/channels/{}/capabilities'
 ip_url = '/ISAPI/System/Network/interfaces/1/ipAddress'
 reboot_url = '/ISAPI/System/reboot'
-ip_ban_option_url = "/ISAPI/Security/illegalLoginLock"
+ip_ban_option_url = '/ISAPI/Security/illegalLoginLock'
+network_capabilities_url = '/ISAPI/System/Network/capabilities'
+cloud_url = '/ISAPI/System/Network/EZVIZ'
 
-activation_status_url = "/SDK/activateStatus"
-public_key_url = "/ISAPI/Security/challenge"
-activation_url = "/ISAPI/System/activate"
-users_url = "/ISAPI/Security/users"
+activation_status_url = '/SDK/activateStatus'
+public_key_url = '/ISAPI/Security/challenge'
+activation_url = '/ISAPI/System/activate'
+users_url = '/ISAPI/Security/users'
 permissons_url = '/ISAPI/Security/UserPermission'
 
 device_info_url = '/ISAPI/System/deviceInfo'
@@ -200,6 +204,13 @@ ip_address_xml = """\
     </ipv6AddressList>
 </Ipv6Mode>
 </IPAddress>
+"""
+
+cloud_xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<EZVIZ>
+   <enabled>false</enabled>
+</EZVIZ>
 """
 
 osd_xml = """\
@@ -838,6 +849,26 @@ def is_ip_ban_option_presented(auth_type, cam_ip, password):
     else:
         return False
 
+# =========================================== CLOUD =================================================
+
+
+def set_cloud_parameters(auth_type, cam_ip, password):
+    if is_camera_supports_cloud(auth_type, cam_ip, password):
+        process_request(auth_type, cam_ip, cloud_url, password, cloud_xml, 'Cloud disabling')
+
+
+def is_camera_supports_cloud(auth_type, cam_ip, password):
+    request = requests.get(get_service_url(cam_ip, network_capabilities_url), auth=get_auth(auth_type, admin_user_name, password))
+    answer_text = clear_xml_from_namespaces(request.text)
+
+    answer_xml = ElementTree.fromstring(answer_text)
+    cloud_element = answer_xml.find('isSupportEZVIZ')
+
+    if cloud_element is not None:
+        if cloud_element.text == 'true':
+            return True
+
+    return False
 
 # =========================================== TIME =================================================
 
