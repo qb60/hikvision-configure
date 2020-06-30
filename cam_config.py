@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2020-04-30
+# 2020-06-30
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -20,7 +20,10 @@ video_user_name = 'video'
 video_user_password = 'qwer1234'
 
 # True False
-allow_videouser_downloading_records = False
+allow_videouser_downloading_records = True
+
+monitoring_user_name = 'monuser'
+monitoring_user_password = '1234qwer'
 
 # 320,640,640,704
 # 240,360,480,576
@@ -49,7 +52,11 @@ notification_email1 = 'admin1@example.com'
 notification_email2 = 'admin2@example.com'
 notification_email3 = ''
 
+refomat_sd_if_it_is_ok = False
+
 # from params import *
+
+ERRORS_MAX_COUNT = 3
 
 # ============================= MAIN WORK ===============================
 
@@ -58,6 +65,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # COMMENT UNNEEDED STEPS
 
     # set_video_user(auth_type, current_cam_ip, current_password)
+    # set_monitoring_user(auth_type, current_cam_ip, current_password)
     # print_users_list(auth_type, current_cam_ip, current_password)
     # set_ntp(auth_type, current_cam_ip, current_password)
     # set_time(auth_type, current_cam_ip, current_password)
@@ -126,7 +134,7 @@ event_diskerror_trigger_url = '/ISAPI/Event/triggers/diskerror/notifications'
 event_motion_detector_trigger_url = '/ISAPI/Event/triggers/VMD-1/notifications'
 motion_detector_parameters_url = '/ISAPI/System/Video/inputs/channels/1/motionDetection'
 recording_schedule_url = '/ISAPI/ContentMgmt/record/tracks/101'
-video_photo_ration_url = '/ISAPI/ContentMgmt/Storage/quota/1'
+video_photo_ratio_url = '/ISAPI/ContentMgmt/Storage/quota/1'
 
 storages_status_url = '/ISAPI/ContentMgmt/Storage/hdd'
 storage_format_url = '/ISAPI/ContentMgmt/Storage/hdd/1/format'
@@ -572,7 +580,7 @@ recording_schedule_enabling_xml = """\
 </CustomExtension>
 """
 
-video_photo_ration_xml = """\
+video_photo_ratio_xml = """\
 <diskQuota version="2.0">
     <id>1</id>
     <type>ratio</type>
@@ -1011,7 +1019,7 @@ def process_activation_request(cam_ip, pass_encrypted_encoded):
     process_request(AuthType.UNAUTHORISED, cam_ip, activation_url, admin_old_password, request_data, 'Activation')
 
 
-# ========================================= VIDEO USER ===========================================================
+# ========================================= USER MANAGEMENT ===========================================================
 
 class User:
     def __init__(self):
@@ -1041,22 +1049,67 @@ def print_users_list(auth_type, cam_ip, admin_password):
 
 
 def set_video_user(auth_type, cam_ip, admin_password):
-    user = find_video_user(auth_type, cam_ip, admin_password, video_user_name)
+    user = add_or_update_user(auth_type, cam_ip, admin_password, video_user_name, video_user_password)
 
     if user.is_valid:
-        print("Video user is presented")
-        user.password = video_user_password
-        set_video_user_password(auth_type, cam_ip, admin_password, user)
         set_video_user_permissions(auth_type, cam_ip, admin_password, user)
+
+
+def set_monitoring_user(auth_type, cam_ip, admin_password):
+    add_or_update_user(auth_type, cam_ip, admin_password, monitoring_user_name, monitoring_user_password)
+
+
+def add_or_update_user(auth_type, cam_ip, admin_password, user_name, user_password):
+    user = find_user(auth_type, cam_ip, admin_password, user_name)
+
+    if user.is_valid:
+        print("User '{}' is presented".format(user_name))
+        user.password = user_password
+        set_user_password(auth_type, cam_ip, admin_password, user)
+        return user
     else:
-        add_video_user(auth_type, cam_ip, admin_password)
-
-        new_user = find_video_user(auth_type, cam_ip, admin_password, video_user_name)
-        if new_user.is_valid:
-            set_video_user_permissions(auth_type, cam_ip, admin_password, new_user)
+        add_user(auth_type, cam_ip, admin_password, user_name, user_password)
+        return find_user(auth_type, cam_ip, admin_password, user_name)
 
 
-def find_video_user(auth_type, cam_ip, admin_password, user_name):
+def set_user_password(auth_type, cam_ip, admin_password, user):
+    if check_password(user.password):
+        user_element = ElementTree.fromstring(user_password_xml)
+
+        user_id_element = user_element.find('id')
+        user_id_element.text = user.id
+
+        user_name_element = user_element.find('userName')
+        user_name_element.text = user.name
+
+        password_element = user_element.find('password')
+        password_element.text = user.password
+
+        request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
+
+        process_request(auth_type, cam_ip, users_url, admin_password, request_text, "'{}' user password updating".format(user.name))
+
+
+def add_user(auth_type, cam_ip, admin_password, user_name, user_password):
+    if check_password(video_user_password):
+        user_element = ElementTree.fromstring(add_user_xml)
+
+        user_name_element = user_element.find('userName')
+        user_name_element.text = user_name
+
+        password_element = user_element.find('password')
+        password_element.text = user_password
+
+        request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
+        answer = requests.post(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password), data=request_text)
+
+        answer_text = answer.text
+        print_answer_status("Adding user '{}'".format(user_name), answer_text, 'OK')
+    else:
+        print('USER ISN\'T ADDED')
+
+
+def find_user(auth_type, cam_ip, admin_password, user_name):
     request = requests.get(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password))
     answer_text = request.text
 
@@ -1081,43 +1134,6 @@ def find_video_user(auth_type, cam_ip, admin_password, user_name):
                     break
 
     return user
-
-
-def set_video_user_password(auth_type, cam_ip, admin_password, user):
-    if check_password(user.password):
-        user_element = ElementTree.fromstring(user_password_xml)
-
-        user_id_element = user_element.find('id')
-        user_id_element.text = user.id
-
-        user_name_element = user_element.find('userName')
-        user_name_element.text = video_user_name
-
-        password_element = user_element.find('password')
-        password_element.text = user.password
-
-        request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
-
-        process_request(auth_type, cam_ip, users_url, admin_password, request_text, 'Video user password updating')
-
-
-def add_video_user(auth_type, cam_ip, admin_password):
-    if check_password(video_user_password):
-        user_element = ElementTree.fromstring(add_user_xml)
-
-        user_name_element = user_element.find('userName')
-        user_name_element.text = video_user_name
-
-        password_element = user_element.find('password')
-        password_element.text = video_user_password
-
-        request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
-        answer = requests.post(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password), data=request_text)
-
-        answer_text = answer.text
-        print_answer_status('Adding video user', answer_text, 'OK')
-    else:
-        print('VIDEO USER ISN\'T ADDED')
 
 
 def set_video_user_permissions(auth_type, cam_ip, admin_password, user):
@@ -1286,8 +1302,14 @@ class StorageStatus:
     UNKNOWN = 'unknown'
 
 
+class FormattingStatus:
+    FORMATTING = 0,
+    NOT_FORMATTING = 1,
+    ERROR = 2
+
+
 def set_video_photo_ratio(auth_type, cam_ip, password):
-    process_request(auth_type, cam_ip, video_photo_ration_url, password, video_photo_ration_xml, 'Video-photo ratio set')
+    process_request(auth_type, cam_ip, video_photo_ratio_url, password, video_photo_ratio_xml, 'Video-photo ratio set')
 
 
 def format_storage(auth_type, cam_ip, password):
@@ -1295,13 +1317,19 @@ def format_storage(auth_type, cam_ip, password):
     authenticator = get_auth(auth_type, admin_user_name, password)
     storage_status = get_storage_status(authenticator, cam_ip)
     print_storage_status(storage_status)
-    if storage_status != StorageStatus.NOT_FOUND:
+
+    if storage_status == StorageStatus.NOT_FOUND:
+        print("THERE'S NO STORAGE FOR FORMATTING!")
+        return
+
+    if storage_status == StorageStatus.OK:
+        print("Storage is already formatted{}".format(": reformatting" if refomat_sd_if_it_is_ok else ""))
+
+    if storage_status != StorageStatus.OK or refomat_sd_if_it_is_ok:
         do_format_storage(authenticator, cam_ip)
         time.sleep(1)
         storage_status = get_storage_status(authenticator, cam_ip)
         print_storage_status(storage_status)
-    else:
-        print("THERE'S NO STORAGE FOR FORMATTING!")
 
 
 def is_storage_presented(authenticator, cam_ip):
@@ -1335,7 +1363,33 @@ def print_storage_status(status_text):
 
 def do_format_storage(authenticator, cam_ip):
     start_formatting(authenticator, cam_ip)
-    print_formatting_status(authenticator, cam_ip)
+    time.sleep(1)
+
+    errors_count = 0
+    prev_percentage = 0
+
+    while True:
+        storage_status = get_storage_status(authenticator, cam_ip)
+        formatting_status, percentage = get_formatting_status(authenticator, cam_ip)
+
+        if formatting_status == FormattingStatus.ERROR:
+            if errors_count <= ERRORS_MAX_COUNT:
+                errors_count += 1
+                continue
+            else:
+                print('\nDEVICE ERROR DURING FORMATTING')
+                break
+
+        if percentage != prev_percentage:
+            stdout.write('\rFormatting: {}%         Status: {}                 '.format(percentage, storage_status))
+            stdout.flush()
+        prev_percentage = percentage
+
+        if storage_status == StorageStatus.OK:
+            break
+
+        time.sleep(1)
+    print('')
 
 
 def start_formatting(authenticator, cam_ip):
@@ -1345,28 +1399,21 @@ def start_formatting(authenticator, cam_ip):
         pass
 
 
-def print_formatting_status(auth, cam_ip):
-    time.sleep(1)
-    formatting_status, prev_percentage = get_formatting_status(auth, cam_ip)
-    while formatting_status:
-        formatting_status, percentage = get_formatting_status(auth, cam_ip)
-        if percentage != prev_percentage:
-            stdout.write('\rFormatting: {}%     '.format(percentage))
-            stdout.flush()
-            prev_percentage = percentage
-        time.sleep(1)
-    print('')
-
-
 def get_formatting_status(authenticator, cam_ip):
     percents_answer = requests.get(get_service_url(cam_ip, storage_format_percents_url), auth=authenticator)
-    percents_answer_text = clear_xml_from_namespaces(percents_answer.text)
-    percents_element = ElementTree.fromstring(percents_answer_text)
 
-    formatting_status = percents_element.find('formating')
-    percentage = percents_element.find('percent')
+    if percents_answer:
+        percents_answer_text = clear_xml_from_namespaces(percents_answer.text)
+        percents_element = ElementTree.fromstring(percents_answer_text)
 
-    return True if formatting_status.text == "true" else False, percentage.text
+        formatting_status = percents_element.find('formating')
+        percentage = percents_element.find('percent')
+
+        is_formatting = FormattingStatus.FORMATTING if formatting_status.text == "true" else FormattingStatus.NOT_FORMATTING
+
+        return is_formatting, percentage.text
+    else:
+        return FormattingStatus.ERROR, 0
 
 
 # =========================================== VARIOUS STUFF =================================================
