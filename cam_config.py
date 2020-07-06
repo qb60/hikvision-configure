@@ -8,6 +8,7 @@
 
 # pip install --user pycrypto
 # pip install --user requests
+from __future__ import print_function
 
 new_ntp = '10.10.10.10'
 time_zone_gmt_offset = '+5:00:00'
@@ -40,7 +41,7 @@ h264_stream_height = 720
 h264_stream_framerate = 10
 
 # True False
-record_audio = False
+record_audio = True
 
 primary_dns = '5.5.5.5'
 secondary_dns = '8.8.8.8'
@@ -65,8 +66,6 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # COMMENT UNNEEDED STEPS
 
     # set_video_user(auth_type, current_cam_ip, current_password)
-    # set_monitoring_user(auth_type, current_cam_ip, current_password)
-    # print_users_list(auth_type, current_cam_ip, current_password)
     # set_ntp(auth_type, current_cam_ip, current_password)
     # set_time(auth_type, current_cam_ip, current_password)
     # set_osd(auth_type, current_cam_ip, current_password)
@@ -75,6 +74,8 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # set_cloud_parameters(auth_type, current_cam_ip, current_password)
 
     # =========== for offices - motion detection and so on ===============
+    # set_monitoring_user(auth_type, current_cam_ip, current_password)
+    # set_basic_auth_method(auth_type, current_cam_ip, current_password)
     # set_no_beep_event_trigger(auth_type, current_cam_ip, current_password)
     # set_device_name(auth_type, current_cam_ip, current_password, new_cam_ip)
     # set_email_notification_addresses(auth_type, current_cam_ip, current_password, new_cam_ip)
@@ -85,7 +86,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # set_recording_by_motion_detector_trigger(auth_type, current_cam_ip, current_password)
     # set_recording_schedule(auth_type, current_cam_ip, current_password)
     # ====================================================================
-
+    # print_user_list(auth_type, current_cam_ip, current_password)
     # set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
     # set_password(auth_type, current_cam_ip, current_password, admin_new_password)
     # reboot_cam(auth_type, current_cam_ip)
@@ -139,6 +140,9 @@ video_photo_ratio_url = '/ISAPI/ContentMgmt/Storage/quota/1'
 storages_status_url = '/ISAPI/ContentMgmt/Storage/hdd'
 storage_format_url = '/ISAPI/ContentMgmt/Storage/hdd/1/format'
 storage_format_percents_url = '/ISAPI/ContentMgmt/Storage/hdd/1/formatStatus'
+
+security_capabilities_url = '/ISAPI/Security/capabilities'
+web_authorization_type_url = '/ISAPI/Security/webCertificate'
 
 # =========================== REQUESTS =============================
 
@@ -1029,7 +1033,7 @@ class User:
         self.is_valid = False
 
 
-def print_users_list(auth_type, cam_ip, admin_password):
+def print_user_list(auth_type, cam_ip, admin_password):
     request = requests.get(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password))
     answer_text = request.text
 
@@ -1187,6 +1191,43 @@ def find_video_permissions_id(auth_type, cam_ip, admin_password, user):
                     break
 
     return permissions_id
+
+# =========================================== AUTHORIZATION =================================================
+
+
+def set_basic_auth_method(auth_type, cam_ip, password):
+    print('Enabling Basic authorization', end = '')
+
+    if auth_type != AuthType.BASIC:
+        request = requests.get(get_service_url(cam_ip, security_capabilities_url), auth=get_auth(auth_type, admin_user_name, password))
+        answer_text = clear_xml_from_namespaces(request.text)
+
+        answer_xml = ElementTree.fromstring(answer_text)
+        web_auth_types_capabilities_element = answer_xml.find('WebCertificateCap')
+
+        if web_auth_types_capabilities_element is not None:
+            auth_types = web_auth_types_capabilities_element.find('CertificateType').attrib['opt']
+
+            if 'basic' in auth_types:
+                enable_basic_auth(auth_type, cam_ip, password)
+            else:
+                print(': Basic authorization is not supported')
+        else:
+            print(': changing authorization is not supported')
+    else:
+        print(': authorization is already Basic')
+
+
+def enable_basic_auth(auth_type, cam_ip, password):
+    web_authorization_type_request = requests.get(get_service_url(cam_ip, web_authorization_type_url), auth=get_auth(auth_type, admin_user_name, password))
+    web_authorization_type_text = clear_xml_from_namespaces(web_authorization_type_request.text)
+
+    web_authorization_type_xml = ElementTree.fromstring(web_authorization_type_text)
+    web_authorization_type_element = web_authorization_type_xml.find('CertificateType')
+    web_authorization_type_element.text = 'digest/basic'
+
+    request_text = ElementTree.tostring(web_authorization_type_xml, encoding='utf8', method='xml')
+    process_request(auth_type, cam_ip, web_authorization_type_url, password, request_text, '')
 
 
 # =========================================== DEVICE NAME =================================================
