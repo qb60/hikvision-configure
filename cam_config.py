@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2020-07-06
+# 2020-07-08
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -15,7 +15,8 @@ time_zone_gmt_offset = '+5:00:00'
 
 admin_user_name = 'admin'
 admin_old_password = 'qwer1234'
-admin_new_password = 'qwer1234'
+# admin_new_password = 'qwer1234'
+admin_new_password = admin_old_password
 
 video_user_name = 'video'
 video_user_password = 'qwer1234'
@@ -54,6 +55,8 @@ notification_email2 = 'admin2@example.com'
 notification_email3 = ''
 
 refomat_sd_if_it_is_ok = False
+photo_capture_interval_minutes = 5
+video_ratio_percents = 100
 
 # from params import *
 
@@ -85,7 +88,9 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # set_email_event_triggers(auth_type, current_cam_ip, current_password)
     # set_recording_by_motion_detector_trigger(auth_type, current_cam_ip, current_password)
     # set_recording_schedule(auth_type, current_cam_ip, current_password)
+    # set_photo_capturing_parameters(auth_type, current_cam_ip, current_password)
     # ====================================================================
+    
     # print_user_list(auth_type, current_cam_ip, current_password)
     # set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
     # set_password(auth_type, current_cam_ip, current_password, admin_new_password)
@@ -108,6 +113,9 @@ from Crypto.Cipher import AES
 from Crypto.PublicKey import RSA
 from sys import stdout
 
+# ==================================================================
+VIDEO_TRACK_ID = '101'
+PHOTO_TRACK_ID = '103'
 # ============================= URLS ===============================
 
 password_url = '/ISAPI/Security/users/1'
@@ -134,7 +142,11 @@ event_diskfull_trigger_url = '/ISAPI/Event/triggers/diskfull/notifications'
 event_diskerror_trigger_url = '/ISAPI/Event/triggers/diskerror/notifications'
 event_motion_detector_trigger_url = '/ISAPI/Event/triggers/VMD-1/notifications'
 motion_detector_parameters_url = '/ISAPI/System/Video/inputs/channels/1/motionDetection'
-recording_schedule_url = '/ISAPI/ContentMgmt/record/tracks/101'
+recording_schedule_url = '/ISAPI/ContentMgmt/record/tracks/'
+recording_video_schedule_url = recording_schedule_url + VIDEO_TRACK_ID
+recording_photo_schedule_url = recording_schedule_url + PHOTO_TRACK_ID
+shapshot_channel_url = '/ISAPI/Snapshot/channels/1'
+
 video_photo_ratio_url = '/ISAPI/ContentMgmt/Storage/quota/1'
 
 storages_status_url = '/ISAPI/ContentMgmt/Storage/hdd'
@@ -1320,17 +1332,72 @@ def set_motion_detector_parameters(auth_type, cam_ip, password):
 
 
 def set_recording_schedule(auth_type, cam_ip, password):
-    request = requests.get(get_service_url(cam_ip, recording_schedule_url), auth=get_auth(auth_type, admin_user_name, password))
+    request = requests.get(get_service_url(cam_ip, recording_video_schedule_url), auth=get_auth(auth_type, admin_user_name, password))
     answer_text = clear_xml_from_namespaces(request.text)
     track_element = ElementTree.fromstring(answer_text)
-    track_element = replace_subelement_body_with(track_element, 'TrackSchedule', recording_schedule_time_xml)
-    track_element = replace_subelement_body_with(track_element, 'CustomExtensionList', recording_schedule_enabling_xml)
+    track_element = replace_subelement_body_with_text(track_element, 'TrackSchedule', recording_schedule_time_xml)
+    track_element = replace_subelement_body_with_text(track_element, 'CustomExtensionList', recording_schedule_enabling_xml)
 
     loop_enable_element = track_element.find('LoopEnable')
     loop_enable_element.text = "true"
 
     request_data = ElementTree.tostring(track_element, encoding='utf8', method='xml')
-    process_request(auth_type, cam_ip, recording_schedule_url, password, request_data, 'Recording schedule set')
+    process_request(auth_type, cam_ip, recording_video_schedule_url, password, request_data, 'Recording schedule set')
+
+
+# ======================================= CAPTURING PHOTOS =================================================
+
+
+def set_photo_capturing_parameters(auth_type, cam_ip, password):
+    set_photo_schedule(auth_type, cam_ip, password)
+    set_shapshot_settings(auth_type, cam_ip, password)
+
+
+def set_photo_schedule(auth_type, cam_ip, password):
+    request = requests.get(get_service_url(cam_ip, recording_photo_schedule_url), auth=get_auth(auth_type, admin_user_name, password))
+    answer_text = clear_xml_from_namespaces(request.text)
+    track_element = ElementTree.fromstring(answer_text)
+
+    schedule_element = ElementTree.fromstring(recording_schedule_time_xml)
+    actions = schedule_element.findall('ScheduleAction')
+
+    for action in actions:
+        recording_mode = action.find('Actions').find('ActionRecordingMode')
+        recording_mode.text = 'CMR'
+
+    recording_schedule_enabling_element = ElementTree.fromstring(recording_schedule_enabling_xml)
+
+    pre_record_time_element = recording_schedule_enabling_element.find('PreRecordTimeSeconds')
+    pre_record_time_element.text = '0'
+
+    post_record_time_element = recording_schedule_enabling_element.find('PostRecordTimeSeconds')
+    post_record_time_element.text = '0'
+
+    track_element = replace_subelement_body_with(track_element, 'TrackSchedule', schedule_element)
+    track_element = replace_subelement_body_with(track_element, 'CustomExtensionList', recording_schedule_enabling_element)
+
+    loop_enable_element = track_element.find('LoopEnable')
+    loop_enable_element.text = "false"
+
+    request_data = ElementTree.tostring(track_element, encoding='utf8', method='xml')
+    process_request(auth_type, cam_ip, recording_photo_schedule_url, password, request_data, 'Photo capture schedule set')
+
+
+def set_shapshot_settings(auth_type, cam_ip, password):
+    request = requests.get(get_service_url(cam_ip, shapshot_channel_url), auth=get_auth(auth_type, admin_user_name, password))
+    answer_text = clear_xml_from_namespaces(request.text)
+    shapshot_channel_element = ElementTree.fromstring(answer_text)
+
+    timing_capture_element = shapshot_channel_element.find('timingCapture')
+    timing_capture_element.find('enabled').text = 'true'
+
+    compress_element = timing_capture_element.find('compress')
+    compress_element.find('quality').text = '80'
+    compress_element.find('captureInterval').text = str(photo_capture_interval_minutes * 60000)
+    compress_element.find('captureNumber').text = '0'
+
+    request_data = ElementTree.tostring(shapshot_channel_element, encoding='utf8', method='xml')
+    process_request(auth_type, cam_ip, shapshot_channel_url, password, request_data, 'Photo capture enabling')
 
 
 # =========================================== STORAGE =================================================
@@ -1350,7 +1417,12 @@ class FormattingStatus:
 
 
 def set_video_photo_ratio(auth_type, cam_ip, password):
-    process_request(auth_type, cam_ip, video_photo_ratio_url, password, video_photo_ratio_xml, 'Video-photo ratio set')
+    ratio_elements = ElementTree.fromstring(video_photo_ratio_xml)
+    ratio_elements.find('videoQuotaRatio').text = str(video_ratio_percents)
+    ratio_elements.find('pictureQuotaRatio').text = str(100-video_ratio_percents)
+
+    request_data = ElementTree.tostring(ratio_elements, encoding='utf8', method='xml')
+    process_request(auth_type, cam_ip, video_photo_ratio_url, password, request_data, 'Video-photo ratio set')
 
 
 def format_storage(auth_type, cam_ip, password):
@@ -1552,11 +1624,15 @@ def replace_subelement_with(parent, new_subelement):
     return parent
 
 
-def replace_subelement_body_with(parent, subelement_tag, new_body_text):
+def replace_subelement_body_with_text(parent, subelement_tag, new_body_text):
+    new_body = ElementTree.fromstring(new_body_text)
+    return replace_subelement_body_with(parent, subelement_tag, new_body)
+
+
+def replace_subelement_body_with(parent, subelement_tag, new_body):
     subelement = parent.find(subelement_tag)
     subelement.clear()
-    inner_element = ElementTree.fromstring(new_body_text)
-    subelement.append(inner_element)
+    subelement.append(new_body)
     return parent
 
 
