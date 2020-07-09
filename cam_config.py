@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2020-07-08
+# 2020-07-09
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -55,12 +55,13 @@ notification_email2 = 'admin2@example.com'
 notification_email3 = ''
 
 refomat_sd_if_it_is_ok = False
-photo_capture_interval_minutes = 5
+photo_capture_interval_minutes = 15
 video_ratio_percents = 100
 
 # from params import *
 
-ERRORS_MAX_COUNT = 3
+# not less than 15s
+DELAY_AFTER_FORMATTING_SECONDS = 20
 
 # ============================= MAIN WORK ===============================
 
@@ -1440,9 +1441,6 @@ def format_storage(auth_type, cam_ip, password):
 
     if storage_status != StorageStatus.OK or refomat_sd_if_it_is_ok:
         do_format_storage(authenticator, cam_ip)
-        time.sleep(1)
-        storage_status = get_storage_status(authenticator, cam_ip)
-        print_storage_status(storage_status)
 
 
 def is_storage_presented(authenticator, cam_ip):
@@ -1475,34 +1473,30 @@ def print_storage_status(status_text):
 
 
 def do_format_storage(authenticator, cam_ip):
+    # unformatted
+    # formatting 0%
+    # ...
+    # formatting 88%
+    # ok
+    # not found
+    # ... 15 seconds
+    # ok
+
     start_formatting(authenticator, cam_ip)
     time.sleep(1)
 
-    errors_count = 0
-    prev_percentage = 0
+    display_formatting_process(authenticator, cam_ip)
+    time.sleep(DELAY_AFTER_FORMATTING_SECONDS)
 
-    while True:
-        storage_status = get_storage_status(authenticator, cam_ip)
-        formatting_status, percentage = get_formatting_status(authenticator, cam_ip)
+    percentage = get_formatting_percentage(authenticator, cam_ip)
+    storage_status = get_storage_status(authenticator, cam_ip)
 
-        if formatting_status == FormattingStatus.ERROR:
-            if errors_count <= ERRORS_MAX_COUNT:
-                errors_count += 1
-                continue
-            else:
-                print('\nDEVICE ERROR DURING FORMATTING')
-                break
-
-        if percentage != prev_percentage:
-            stdout.write('\rFormatting: {}%         Status: {}                 '.format(percentage, storage_status))
-            stdout.flush()
-        prev_percentage = percentage
-
-        if storage_status == StorageStatus.OK:
-            break
-
-        time.sleep(1)
-    print('')
+    if storage_status == StorageStatus.OK:
+        print('\rFormatting: {}%         Status: {}                 '.format(percentage, storage_status))
+        print('Formatting: success')
+    else:
+        print('')
+        raise RuntimeError('ERROR during formatting, storage status: {}'.format(storage_status))
 
 
 def start_formatting(authenticator, cam_ip):
@@ -1512,21 +1506,35 @@ def start_formatting(authenticator, cam_ip):
         pass
 
 
-def get_formatting_status(authenticator, cam_ip):
+def display_formatting_process(authenticator, cam_ip):
+    prev_percentage = 0
+
+    while True:
+        percentage = get_formatting_percentage(authenticator, cam_ip)
+        storage_status = get_storage_status(authenticator, cam_ip)
+
+        if storage_status != StorageStatus.FORMATTING:
+            break
+
+        if percentage != prev_percentage:
+            stdout.write('\rFormatting: {}%         Status: {}                 '.format(percentage, storage_status))
+            stdout.flush()
+        prev_percentage = percentage
+
+        time.sleep(1)
+
+
+def get_formatting_percentage(authenticator, cam_ip):
     percents_answer = requests.get(get_service_url(cam_ip, storage_format_percents_url), auth=authenticator)
 
     if percents_answer:
         percents_answer_text = clear_xml_from_namespaces(percents_answer.text)
         percents_element = ElementTree.fromstring(percents_answer_text)
 
-        formatting_status = percents_element.find('formating')
         percentage = percents_element.find('percent')
-
-        is_formatting = FormattingStatus.FORMATTING if formatting_status.text == "true" else FormattingStatus.NOT_FORMATTING
-
-        return is_formatting, percentage.text
+        return percentage.text
     else:
-        return FormattingStatus.ERROR, 0
+        return 0
 
 
 # =========================================== VARIOUS STUFF =================================================
