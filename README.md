@@ -1,6 +1,6 @@
-## Hikvision/HiWatch camera batch auto configuration ##
+## Hikvision/HiWatch camera configuring script ##
 
-This script may be used for automatic configure Hikvision/HiWatch cameras including activation.
+This script can be used for automatic configuring Hikvision/HiWatch cameras.
 
 All parameters except IP is located in the script.
 Uncomment steps you need in **set_cam_options()** function.
