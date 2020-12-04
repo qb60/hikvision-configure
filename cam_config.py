@@ -8,6 +8,9 @@
 
 # pip3 install --user pycryptodomex
 # pip3 install --user requests
+# OR
+# /usr/bin/python3 -m pip install --user pycryptodomex
+# /usr/bin/python3 -m pip install --user requests
 
 new_ntp = '10.10.10.10'
 time_zone_gmt_offset = '+5:00:00'
@@ -76,9 +79,9 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # disable_unneeded_event_triggers(auth_type, current_cam_ip, current_password)
 
     # =========== for offices - motion detection and so on ===============
+    # set_integration_protocol_enabled(auth_type, current_cam_ip, current_password)
     # set_monitoring_user(auth_type, current_cam_ip, current_password)
     # set_basic_auth_method(auth_type, current_cam_ip, current_password)
-    # set_no_beep_event_trigger(auth_type, current_cam_ip, current_password)
     # set_device_name(auth_type, current_cam_ip, current_password, new_cam_ip)
     # set_email_notification_addresses(auth_type, current_cam_ip, current_password, new_cam_ip)
     # set_video_photo_ratio(auth_type, current_cam_ip, current_password)
@@ -130,6 +133,7 @@ reboot_url = '/ISAPI/System/reboot'
 ip_ban_option_url = '/ISAPI/Security/illegalLoginLock'
 network_capabilities_url = '/ISAPI/System/Network/capabilities'
 cloud_url = '/ISAPI/System/Network/EZVIZ'
+integration_protocol_url = '/ISAPI/System/Network/Integrate'
 
 activation_status_url = '/SDK/activateStatus'
 public_key_url = '/ISAPI/Security/challenge'
@@ -239,6 +243,16 @@ cloud_xml = """\
 <EZVIZ>
    <enabled>false</enabled>
 </EZVIZ>
+"""
+
+integration_protocol_xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<Integrate>
+    <CGI>
+        <enable>true</enable>
+        <certificateType>digest/basic</certificateType>
+    </CGI>
+</Integrate>
 """
 
 osd_xml = """\
@@ -881,25 +895,18 @@ def is_ip_ban_option_presented(auth_type, cam_ip, password):
 
 
 def set_cloud_parameters(auth_type, cam_ip, password):
-    if is_camera_supports_cloud(auth_type, cam_ip, password):
+    if is_camera_supports(auth_type, cam_ip, password, network_capabilities_url, 'isSupportEZVIZ'):
         process_request(auth_type, cam_ip, cloud_url, password, cloud_xml, 'Cloud disabling')
 
 
-def is_camera_supports_cloud(auth_type, cam_ip, password):
-    request = requests.get(get_service_url(cam_ip, network_capabilities_url), auth=get_auth(auth_type, admin_user_name, password))
-    answer_text = clear_xml_from_namespaces(request.text)
+# ========================================= INTEGRATION PROTOCOL ============================================
 
-    answer_xml = ElementTree.fromstring(answer_text)
-    cloud_element = answer_xml.find('isSupportEZVIZ')
+def set_integration_protocol_enabled(auth_type, cam_ip, password):
+    if is_camera_supports(auth_type, cam_ip, password, network_capabilities_url, 'isSupportIntegrate'):
+        process_request(auth_type, cam_ip, integration_protocol_url, password, integration_protocol_xml, 'Integration protocol enabling')
 
-    if cloud_element is not None:
-        if cloud_element.text == 'true':
-            return True
-
-    return False
 
 # =========================================== TIME =================================================
-
 
 def set_time(auth_type, cam_ip, password):
     if timezone_has_right_format(time_zone_gmt_offset):
@@ -1319,10 +1326,6 @@ def set_smtp(parent_element):
 # =========================================== EVENT TRIGGERS =================================================
 
 
-def set_no_beep_event_trigger(auth_type, cam_ip, password):
-    process_request(auth_type, cam_ip, event_diskerror_trigger_url, password, empty_event_trigger_xml, 'No beep trigger for diskerror event set')
-
-
 def set_email_event_triggers(auth_type, cam_ip, password):
     process_request(auth_type, cam_ip, event_diskfull_trigger_url, password, email_event_trigger_xml, 'Email trigger for diskfull event set')
     process_request(auth_type, cam_ip, event_diskerror_trigger_url, password, email_event_trigger_xml, 'Email trigger for diskerror event set')
@@ -1575,6 +1578,20 @@ def get_formatting_percentage(authenticator, cam_ip):
 
 # =========================================== VARIOUS STUFF =================================================
 
+def is_camera_supports(auth_type, cam_ip, password, capabilities_url, property_name):
+    request = requests.get(get_service_url(cam_ip, capabilities_url), auth=get_auth(auth_type, admin_user_name, password))
+    answer_text = clear_xml_from_namespaces(request.text)
+
+    answer_xml = ElementTree.fromstring(answer_text)
+    property_element = answer_xml.find(property_name)
+
+    if property_element is not None:
+        if property_element.text == 'true':
+            return True
+
+    return False
+
+
 def print_device_info(auth_type, cam_ip, password):
     request = requests.get(get_service_url(cam_ip, device_info_url), auth=get_auth(auth_type, admin_user_name, password))
     answer_text = clear_xml_from_namespaces(request.text)
@@ -1678,6 +1695,8 @@ def replace_subelement_body_with(parent, subelement_tag, new_body):
     subelement.append(new_body)
     return parent
 
+
+# ===========================================================================================================
 
 def main():
     if len(sys.argv) > 1:
