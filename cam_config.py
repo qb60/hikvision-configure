@@ -73,6 +73,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # set_off_ip_ban_option(auth_type, current_cam_ip, current_password)
     # set_video_streams(auth_type, current_cam_ip, current_password)
     # set_cloud_parameters(auth_type, current_cam_ip, current_password)
+    # disable_unneeded_event_triggers(auth_type, current_cam_ip, current_password)
 
     # =========== for offices - motion detection and so on ===============
     # set_monitoring_user(auth_type, current_cam_ip, current_password)
@@ -138,9 +139,12 @@ permissons_url = '/ISAPI/Security/UserPermission'
 
 device_info_url = '/ISAPI/System/deviceInfo'
 email_addresses_url = '/ISAPI/System/Network/mailing/1'
+
 event_diskfull_trigger_url = '/ISAPI/Event/triggers/diskfull/notifications'
 event_diskerror_trigger_url = '/ISAPI/Event/triggers/diskerror/notifications'
 event_motion_detector_trigger_url = '/ISAPI/Event/triggers/VMD-1/notifications'
+event_trigger_base_url = '/ISAPI/Event/triggers/'
+
 motion_detector_parameters_url = '/ISAPI/System/Video/inputs/channels/1/motionDetection'
 recording_schedule_url = '/ISAPI/ContentMgmt/record/tracks/'
 recording_video_schedule_url = recording_schedule_url + VIDEO_TRACK_ID
@@ -414,7 +418,7 @@ email_addresses_xml = """\
 </mailing>
 """
 
-no_beep_event_trigger_xml = """\
+empty_event_trigger_xml = """\
 <EventTriggerNotificationList version="2.0"></EventTriggerNotificationList>
 """
 
@@ -1316,7 +1320,7 @@ def set_smtp(parent_element):
 
 
 def set_no_beep_event_trigger(auth_type, cam_ip, password):
-    process_request(auth_type, cam_ip, event_diskerror_trigger_url, password, no_beep_event_trigger_xml, 'No beep trigger for diskerror event set')
+    process_request(auth_type, cam_ip, event_diskerror_trigger_url, password, empty_event_trigger_xml, 'No beep trigger for diskerror event set')
 
 
 def set_email_event_triggers(auth_type, cam_ip, password):
@@ -1326,6 +1330,32 @@ def set_email_event_triggers(auth_type, cam_ip, password):
 
 def set_recording_by_motion_detector_trigger(auth_type, cam_ip, password):
     process_request(auth_type, cam_ip, event_motion_detector_trigger_url, password, recording_event_trigger_xml, 'Recording by motion detector trigger set')
+
+
+def disable_unneeded_event_triggers(auth_type, cam_ip, password):
+    request = requests.get(get_service_url(cam_ip, event_trigger_base_url), auth=get_auth(auth_type, admin_user_name, password))
+    answer_text = clear_xml_from_namespaces(request.text)
+
+    supported_event_ids = mute_possible_events(answer_text)
+    for event_id in supported_event_ids:
+        target_url = event_trigger_base_url + event_id + '/notifications'
+        process_request(auth_type, cam_ip, target_url, password, empty_event_trigger_xml, 'Event "{}" triggers disabling'.format(event_id))
+
+
+def mute_possible_events(event_triggers_text):
+    xml_event_triggers = ElementTree.fromstring(event_triggers_text)
+    event_trigger_list = xml_event_triggers.find('EventTriggerList')
+
+    events = []
+
+    if event_trigger_list is not None:
+        for event_trigger in event_trigger_list:
+            id_element = event_trigger.find('id')
+            if id_element is not None:
+                id_text = id_element.text
+                events.append(id_text)
+
+    return events
 
 
 # =========================================== MOTION DETECTOR =================================================
@@ -1633,7 +1663,6 @@ def replace_subelement_with(parent, new_subelement):
     subelement_tag = new_subelement.tag
     subelement = parent.find(subelement_tag)
     parent.remove(subelement)
-
     parent.append(new_subelement)
     return parent
 
