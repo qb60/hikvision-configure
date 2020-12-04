@@ -63,11 +63,12 @@ video_ratio_percents = 100
 # not less than 15s
 DELAY_AFTER_FORMATTING_SECONDS = 20
 
+
 # ============================= MAIN WORK ===============================
 
 
 def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
-    # COMMENT UNNEEDED STEPS
+    # UNCOMMENT NEEDED STEPS
 
     # set_video_user(auth_type, current_cam_ip, current_password)
     # set_ntp(auth_type, current_cam_ip, current_password)
@@ -92,7 +93,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # set_recording_schedule(auth_type, current_cam_ip, current_password)
     # set_photo_capturing_parameters(auth_type, current_cam_ip, current_password)
     # ====================================================================
-    
+
     # print_user_list(auth_type, current_cam_ip, current_password)
     # set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
     # set_password(auth_type, current_cam_ip, current_password, admin_new_password)
@@ -891,6 +892,7 @@ def is_ip_ban_option_presented(auth_type, cam_ip, password):
     else:
         return False
 
+
 # =========================================== CLOUD =================================================
 
 
@@ -1034,7 +1036,7 @@ def encrypt_password(random_key_text, password):
     first_part = random_key_text[:16]
 
     new_password_to_send = password.encode('ascii')
-    new_password_to_send += bytearray(16-len(new_password_to_send))
+    new_password_to_send += bytearray(16 - len(new_password_to_send))
 
     aes = AES.new(random_key, MODE_ECB)
     pass_encrypted = aes.encrypt(first_part) + aes.encrypt(new_password_to_send)
@@ -1222,11 +1224,12 @@ def find_video_permissions_id(auth_type, cam_ip, admin_password, user):
 
     return permissions_id
 
+
 # =========================================== AUTHORIZATION =================================================
 
 
 def set_basic_auth_method(auth_type, cam_ip, password):
-    print('Enabling Basic authorization', end = '')
+    print('Enabling Basic authorization', end='')
 
     if auth_type != AuthType.BASIC:
         request = requests.get(get_service_url(cam_ip, security_capabilities_url), auth=get_auth(auth_type, admin_user_name, password))
@@ -1447,6 +1450,7 @@ class StorageStatus:
     UNFORMATTED = 'unformatted'
     FORMATTING = 'formatting'
     NOT_FOUND = 'not found'
+    ERROR = 'error'
     UNKNOWN = 'unknown'
 
 
@@ -1458,18 +1462,22 @@ class FormattingStatus:
 
 def set_video_photo_ratio(auth_type, cam_ip, password):
     ratio_elements = ElementTree.fromstring(video_photo_ratio_xml)
+    photo_ratio_percents = 100 - video_ratio_percents
     ratio_elements.find('videoQuotaRatio').text = str(video_ratio_percents)
-    ratio_elements.find('pictureQuotaRatio').text = str(100-video_ratio_percents)
+    ratio_elements.find('pictureQuotaRatio').text = str(photo_ratio_percents)
 
     request_data = ElementTree.tostring(ratio_elements, encoding='utf8', method='xml')
-    process_request(auth_type, cam_ip, video_photo_ratio_url, password, request_data, 'Video-photo ratio set')
+    message = 'Video-photo ratio (video: {}%, photo: {}%) set'.format(video_ratio_percents, photo_ratio_percents)
+
+    process_request(auth_type, cam_ip, video_photo_ratio_url, password, request_data, message)
 
 
 def format_storage(auth_type, cam_ip, password):
     print("Format storage")
     authenticator = get_auth(auth_type, admin_user_name, password)
     storage_status = get_storage_status(authenticator, cam_ip)
-    print_storage_status(storage_status)
+    storage_capacity = get_storage_capacity(authenticator, cam_ip)
+    print_storage_status_and_capacity(storage_status, storage_capacity)
 
     if storage_status == StorageStatus.NOT_FOUND:
         print("THERE'S NO STORAGE FOR FORMATTING!")
@@ -1482,8 +1490,20 @@ def format_storage(auth_type, cam_ip, password):
         do_format_storage(authenticator, cam_ip)
 
 
-def is_storage_presented(authenticator, cam_ip):
-    return get_storage_status(authenticator, cam_ip) != StorageStatus.NOT_FOUND
+def get_storage_capacity(authenticator, cam_ip):
+    storages_list = requests.get(get_service_url(cam_ip, storages_status_url), auth=authenticator)
+    storages_list_text = clear_xml_from_namespaces(storages_list.text)
+
+    storages_list_element = ElementTree.fromstring(storages_list_text)
+    hdd_element = storages_list_element.find('hdd')
+
+    if hdd_element is not None:
+        status_element = hdd_element.find('capacity')
+        capacity = int(status_element.text) / 1000.0
+        return capacity
+
+    else:
+        return 0
 
 
 def get_storage_status(authenticator, cam_ip):
@@ -1501,14 +1521,15 @@ def get_storage_status(authenticator, cam_ip):
         status_table = {
             'ok': StorageStatus.OK,
             'unformatted': StorageStatus.UNFORMATTED,
-            'formating': StorageStatus.FORMATTING
+            'formating': StorageStatus.FORMATTING,
+            'error': StorageStatus.ERROR
         }
 
         return status_table.get(status_element.text, StorageStatus.UNKNOWN)
 
 
-def print_storage_status(status_text):
-    print('Storage status: {}'.format(status_text))
+def print_storage_status_and_capacity(status_text, capacity):
+    print('Storage size ~{} GB, status: {}'.format(capacity, status_text))
 
 
 def do_format_storage(authenticator, cam_ip):
@@ -1719,7 +1740,7 @@ def main():
 
         except RuntimeError as e:
             print(e)
-        
+
         except requests.exceptions.ConnectionError as e:
             print('Connection error: %s' % e)
 
