@@ -53,5 +53,6 @@ class TestTimeZoneConvert(unittest.TestCase):
     def test_format5(self):
         self.assertEqual(False, timezone_has_right_format('5:30'))
 
+
 if __name__ == '__main__':
     unittest.main()
