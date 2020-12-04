@@ -58,7 +58,7 @@ notification_email3 = ''
 
 reformat_sd_if_it_is_ok = True
 photo_capture_interval_minutes = 5
-video_ratio_percents = 100
+video_ratio_percents = 99
 
 # not less than 15s
 DELAY_AFTER_FORMATTING_SECONDS = 20
@@ -788,6 +788,11 @@ class VideoChannel:
 
 
 def set_video_streams(auth_type, cam_ip, password):
+    h264_description = '{}x{}x{}'.format(h264_stream_width, h264_stream_height, h264_stream_framerate)
+    mjpeg_description = '{}x{}x{}'.format(mjpeg_stream_width, mjpeg_stream_height, mjpeg_stream_framerate)
+
+    print('Video streams: H264 - {}, MJPEG - {}'.format(h264_description, mjpeg_description))
+
     framerate_multiplier = 100
 
     request = requests.get(get_service_url(cam_ip, video_url), auth=get_auth(auth_type, admin_user_name, password))
