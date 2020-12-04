@@ -1,14 +1,13 @@
-#! /usr/bin/python
+#! /usr/bin/python3
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2020-07-09
+# 2020-12-04
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
-# pip install --user pycrypto
-# pip install --user requests
-from __future__ import print_function
+# pip3 install --user pycryptodomex
+# pip3 install --user requests
 
 new_ntp = '10.10.10.10'
 time_zone_gmt_offset = '+5:00:00'
@@ -54,11 +53,9 @@ notification_email1 = 'admin1@example.com'
 notification_email2 = 'admin2@example.com'
 notification_email3 = ''
 
-refomat_sd_if_it_is_ok = False
-photo_capture_interval_minutes = 15
+reformat_sd_if_it_is_ok = True
+photo_capture_interval_minutes = 5
 video_ratio_percents = 100
-
-# from params import *
 
 # not less than 15s
 DELAY_AFTER_FORMATTING_SECONDS = 20
@@ -107,12 +104,14 @@ import base64
 import time
 import sys
 import ipaddress
+from sys import stdout
+from xml.etree import ElementTree
 from requests.auth import HTTPDigestAuth
 from requests.auth import HTTPBasicAuth
-from xml.etree import ElementTree
-from Crypto.Cipher import AES
-from Crypto.PublicKey import RSA
-from sys import stdout
+from Cryptodome.Cipher import AES
+from Cryptodome.PublicKey import RSA
+from Cryptodome.Cipher import PKCS1_v1_5
+from Cryptodome.Cipher.AES import MODE_ECB
 
 # ==================================================================
 VIDEO_TRACK_ID = '101'
@@ -824,7 +823,7 @@ def get_capabilities(channel_id, auth_type, cam_ip, password):
 def get_options_list(element, tag):
     inner_element = element.find(tag)
     options_text = inner_element.attrib['opt']
-    options = map(int, options_text.split(','))
+    options = list(map(int, options_text.split(',')))
     return options
 
 
@@ -958,14 +957,14 @@ def set_activation(cam_ip):
     password = admin_old_password
 
     if not is_activated(cam_ip):
-        private_key = RSA.generate(1024, e=65537)
+        private_key = RSA.generate(1024)
 
-        answer_text = send_public_key(cam_ip, private_key)
+        answer = send_public_key(cam_ip, private_key)
+        random_key_encrypted_text, answer_is_valid = extract_random_key_encrypted(answer)
 
-        random_key_text, random_key_is_valid = get_random_key_text(answer_text, private_key)
-
-        if random_key_is_valid:
-            pass_encrypted_encoded = encrypt_password(random_key_text, admin_new_password)
+        if answer_is_valid:
+            random_key = decrypt_random_key(random_key_encrypted_text, private_key)
+            pass_encrypted_encoded = encrypt_password(random_key, admin_new_password)
             process_activation_request(cam_ip, pass_encrypted_encoded)
             password = admin_new_password
 
@@ -975,37 +974,6 @@ def set_activation(cam_ip):
         print("Activation: cam is already activated or activation is not supported")
 
     return password
-
-
-def get_random_key_text(answer_text, private_key):
-    answer_xml = ElementTree.fromstring(answer_text)
-    namespace = get_namespace(answer_xml)
-
-    random_key_element = answer_xml.find(namespace + 'key')
-
-    if random_key_element is not None:
-        random_key_encoded = base64.b64decode(random_key_element.text)
-        random_key_bin = base64.b16decode(random_key_encoded.upper())
-        random_key_text = private_key.decrypt(random_key_bin)[-32:]
-
-        return random_key_text, True
-
-    else:
-        return '', False
-
-
-def encrypt_password(random_key_text, password):
-    random_key = base64.b16decode(random_key_text.upper())
-
-    new_password_to_send = password
-    for i in range(len(new_password_to_send), 16):
-        new_password_to_send += chr(0)
-
-    aes = AES.new(random_key)
-    pass_encrypted = aes.encrypt(random_key_text[:16]) + aes.encrypt(new_password_to_send)
-    pass_encrypted_encoded = base64.b64encode(base64.b16encode(pass_encrypted).lower())
-
-    return pass_encrypted_encoded
 
 
 def send_public_key(cam_ip, private_key):
@@ -1026,13 +994,51 @@ def send_public_key(cam_ip, private_key):
     return answer_text
 
 
+def extract_random_key_encrypted(answer):
+    answer_xml = ElementTree.fromstring(answer)
+    namespace = get_namespace(answer_xml)
+
+    random_key_element = answer_xml.find(namespace + 'key')
+
+    if random_key_element is not None:
+        random_key_encrypted = random_key_element.text
+        return random_key_encrypted, True
+
+    else:
+        return '', False
+
+
+def decrypt_random_key(random_key_encrypted_text, private_key):
+    random_key_encoded = base64.b64decode(random_key_encrypted_text)
+
+    random_key_bin = base64.b16decode(random_key_encoded.upper())
+    rsa = PKCS1_v1_5.new(private_key)
+    random_key = rsa.decrypt(random_key_bin, sentinel=None)[-32:]
+
+    return random_key
+
+
+def encrypt_password(random_key_text, password):
+    random_key = base64.b16decode(random_key_text.upper())
+    first_part = random_key_text[:16]
+
+    new_password_to_send = password.encode('ascii')
+    new_password_to_send += bytearray(16-len(new_password_to_send))
+
+    aes = AES.new(random_key, MODE_ECB)
+    pass_encrypted = aes.encrypt(first_part) + aes.encrypt(new_password_to_send)
+
+    pass_encrypted_encoded = base64.b64encode(base64.b16encode(pass_encrypted).lower())
+
+    return pass_encrypted_encoded
+
+
 def process_activation_request(cam_ip, pass_encrypted_encoded):
     request = ElementTree.fromstring(activation_password_xml)
     pass_element = request.find('password')
     pass_element.text = pass_encrypted_encoded.decode()
 
     request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
-
     process_request(AuthType.UNAUTHORISED, cam_ip, activation_url, admin_old_password, request_data, 'Activation')
 
 
@@ -1437,9 +1443,9 @@ def format_storage(auth_type, cam_ip, password):
         return
 
     if storage_status == StorageStatus.OK:
-        print("Storage is already formatted{}".format(": reformatting" if refomat_sd_if_it_is_ok else ""))
+        print("Storage is already formatted{}".format(": reformatting" if reformat_sd_if_it_is_ok else ""))
 
-    if storage_status != StorageStatus.OK or refomat_sd_if_it_is_ok:
+    if storage_status != StorageStatus.OK or reformat_sd_if_it_is_ok:
         do_format_storage(authenticator, cam_ip)
 
 
@@ -1562,7 +1568,7 @@ def parse_ip(ip_with_mask):
     if ip_with_mask.count('/') == 0:
         ip_with_mask += '/24'
 
-    addr = ipaddress.ip_interface(unicode(ip_with_mask))
+    addr = ipaddress.ip_interface(str(ip_with_mask))
     return addr
 
 
@@ -1664,10 +1670,10 @@ def main():
             set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip)
 
         except RuntimeError as e:
-            print(str(e))
+            print(e)
         
         except requests.exceptions.ConnectionError as e:
-            print('Connection error: %s' % str(e))
+            print('Connection error: %s' % e)
 
         except KeyboardInterrupt:
             pass
