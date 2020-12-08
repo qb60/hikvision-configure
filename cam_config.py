@@ -1504,7 +1504,7 @@ def get_storage_capacity(authenticator, cam_ip):
 
     if hdd_element is not None:
         status_element = hdd_element.find('capacity')
-        capacity = int(status_element.text) / 1000.0
+        capacity = int(status_element.text) / 1024.0
         return capacity
 
     else:
