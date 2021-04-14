@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2020-12-04
+# 2021-04-14
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -62,6 +62,33 @@ video_ratio_percents = 99
 
 # not less than 15s
 DELAY_AFTER_FORMATTING_SECONDS = 20
+
+# =============== DST ===============
+# True False
+enable_dst = False
+
+# "00:30", "01:00", "01:30", "02:00"
+dst_offset = "01:00"
+
+# Start DST period
+# 1..12
+start_dst_month = 3
+
+# 0 - sun, 1 - mon, ..., 6 - sat
+start_dst_day_of_week = 3
+
+# 1,2,3,4 - first, second, third or fourth, 5 - last
+start_dst_day_order_number = 4
+
+# 0..23
+start_dst_hour = 0
+
+# End DST period
+end_dst_month = 9
+end_dst_day_of_week = 3
+end_dst_day_order_number = 4
+end_dst_hour = 0
+# ==================================
 
 
 # ============================= MAIN WORK ===============================
@@ -919,6 +946,10 @@ def set_time(auth_type, cam_ip, password):
     if timezone_has_right_format(time_zone_gmt_offset):
         camera_timezone = convert_gmt_offset_to_internal_timezone(time_zone_gmt_offset)
 
+        if enable_dst:
+            start_dst, end_dst = get_dst_params()
+            camera_timezone += make_dst_string(dst_offset, start_dst, end_dst)
+
         request = ElementTree.fromstring(time_zone_xml)
 
         timezone_element = request.find('timeZone')
@@ -949,6 +980,48 @@ def convert_gmt_offset_to_internal_timezone(gmt_offset):
         suffix = '-' + gmt_offset
 
     return prefix + suffix
+
+
+class DstParam:
+    def __init__(self, month, day, day_order_number, hour):
+        self.month = month
+        self.day = day
+        self.day_order_number = day_order_number
+        self.hour = hour
+
+    def __str__(self) -> str:
+        return "Month: {}, Day: {}, Day number: {}, Hour: {}".format(self.month, self.day, self.day_order_number, self.hour)
+
+
+def get_dst_params():
+    start_dst = DstParam(month=start_dst_month, day=start_dst_day_of_week, day_order_number=start_dst_day_order_number, hour=start_dst_hour)
+    end_dst = DstParam(month=end_dst_month, day=end_dst_day_of_week, day_order_number=end_dst_day_order_number, hour=end_dst_hour)
+    return start_dst, end_dst
+
+
+# DST01:30:00,M1.2.3/01:00:00,M4.5.6/04:00:00
+def make_dst_string(dst_offset, start_dst, end_dst):
+    start = make_dst_part_string(start_dst)
+    end = make_dst_part_string(end_dst)
+    return "DST{}:00,{},{}".format(dst_offset, start, end)
+
+
+def make_dst_part_string(dst_param):
+    return "M{}.{}.{}/{:02}:00:00".format(dst_param.month, dst_param.day_order_number, dst_param.day, dst_param.hour)
+
+
+def dst_param_has_right_format(dst_param):
+    is_month_valid = (1 <= dst_param.month <= 12)
+    is_day_order_number_valid = (1 <= dst_param.day_order_number <= 5)
+    is_day_valid = (0 <= dst_param.day <= 6)
+    is_hour_valid = (0 <= dst_param.hour <= 23)
+
+    return is_month_valid and is_day_order_number_valid and is_day_valid and is_hour_valid
+
+
+def dst_offset_has_right_format(offset_string):
+    proper_values = ["00:30", "01:00", "01:30", "02:00"]
+    return offset_string in proper_values
 
 
 # =========================================== ACTIVATION =================================================
@@ -1723,6 +1796,25 @@ def replace_subelement_body_with(parent, subelement_tag, new_body):
 
 
 # ===========================================================================================================
+def check_parameters():
+    if enable_dst:
+        if not dst_offset_has_right_format(dst_offset):
+            raise RuntimeError("DST offset {} is not suitable".format(dst_offset))
+
+        start_dst, end_dst = get_dst_params()
+        is_start_param_valid = dst_param_has_right_format(start_dst)
+        is_end_param_valid = dst_param_has_right_format(end_dst)
+
+        message_template = "Wrong {} DST parameter: {}"
+
+        if not is_start_param_valid:
+            raise RuntimeError(message_template.format("start", start_dst))
+
+        if not is_end_param_valid:
+            raise RuntimeError(message_template.format("end", end_dst))
+
+
+# ===========================================================================================================
 
 def main():
     if len(sys.argv) > 1:
@@ -1735,6 +1827,8 @@ def main():
         print('Processing cam %s:' % current_cam_ip)
 
         try:
+            check_parameters()
+
             current_password = set_activation(current_cam_ip)
             auth_type = get_auth_type(current_cam_ip, current_password)
             if auth_type == AuthType.UNAUTHORISED:
