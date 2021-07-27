@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2021-04-14
+# 2021-07-26
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -122,6 +122,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # ====================================================================
 
     # print_user_list(auth_type, current_cam_ip, current_password)
+    # set_dhcp(auth_type, current_cam_ip, current_password)
     # set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
     # set_password(auth_type, current_cam_ip, current_password, admin_new_password)
     # reboot_cam(auth_type, current_cam_ip)
@@ -252,6 +253,29 @@ ip_address_xml = """\
 <SecondaryDNS>
     <ipAddress>0.0.0.0</ipAddress>
 </SecondaryDNS>
+<Ipv6Mode>
+    <ipV6AddressingType>ra</ipV6AddressingType>
+    <ipv6AddressList>
+        <v6Address>
+            <id>1</id>
+            <type>manual</type>
+            <address>::</address>
+            <bitMask>0</bitMask>
+        </v6Address>
+    </ipv6AddressList>
+</Ipv6Mode>
+</IPAddress>
+"""
+
+dhcp_xml = """\
+<?xml version="1.0" encoding="UTF-8"?>
+<IPAddress>
+<ipVersion>dual</ipVersion>
+<addressingType>dynamic</addressingType>
+<ipAddress></ipAddress>
+<subnetMask>255.255.255.0</subnetMask>
+<ipv6Address>::</ipv6Address>
+<bitMask>0</bitMask>
 <Ipv6Mode>
     <ipV6AddressingType>ra</ipV6AddressingType>
     <ipv6AddressList>
@@ -750,6 +774,10 @@ def set_ip_and_dns(auth_type, cam_ip, new_ip, password):
     else:
         print("New IP is not given, IP won't be changed")
         set_dns(auth_type, cam_ip, password)
+
+
+def set_dhcp(auth_type, cam_ip, password):
+    process_request(auth_type, cam_ip, ip_url, password, dhcp_xml, 'DHCP enabled', 'Reboot Required')
 
 
 def set_dns(auth_type, cam_ip, password):
