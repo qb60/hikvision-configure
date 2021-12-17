@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2021-07-26
+# 2021-12-17
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -29,19 +29,20 @@ allow_videouser_downloading_records = True
 monitoring_user_name = 'monuser'
 monitoring_user_password = '1234qwer'
 
-# 320,640,640,704
-# 240,360,480,576
+# 320,640,640,704,'max'
+# 240,360,480,576,'max'
 # 25,22,20,18,16,15,12,10,8,6,4,2,1
 mjpeg_stream_width = 640
 mjpeg_stream_height = 480
 mjpeg_stream_framerate = 6
 
-# 1280,1920,2560,3072,3840
-# 720, 1080,1440,1728,2160
+# 1280,1920,2560,3072,3840,'max'
+# 720, 1080,1440,1728,2160,'max'
 # 15,12,10,8,6,4,2,1
-h264_stream_width = 1280
-h264_stream_height = 720
-h264_stream_framerate = 10
+h26x_stream_width = 'max'
+h26x_stream_height = 'max'
+h26x_stream_framerate = 10
+enable_h265_if_available = True
 
 # True False
 record_audio = True
@@ -122,7 +123,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # ====================================================================
 
     # print_user_list(auth_type, current_cam_ip, current_password)
-    # set_dhcp(auth_type, current_cam_ip, current_password)
+    # enable_dhcp(auth_type, current_cam_ip, current_password)
     # set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
     # set_password(auth_type, current_cam_ip, current_password, admin_new_password)
     # reboot_cam(auth_type, current_cam_ip)
@@ -338,7 +339,7 @@ osd_xml = """\
 </VideoOverlay>
 """
 
-video_h254_xml = """\
+video_h26x_xml = """\
 <Video>
     <enabled>true</enabled>
     <videoInputChannelID>1</videoInputChannelID>
@@ -776,7 +777,7 @@ def set_ip_and_dns(auth_type, cam_ip, new_ip, password):
         set_dns(auth_type, cam_ip, password)
 
 
-def set_dhcp(auth_type, cam_ip, password):
+def enable_dhcp(auth_type, cam_ip, password):
     process_request(auth_type, cam_ip, ip_url, password, dhcp_xml, 'DHCP enabled', 'Reboot Required')
 
 
@@ -809,6 +810,14 @@ def write_ip_to_xml(xml, tag_name, ip_value):
 
 
 # =========================================== VIDEO =================================================
+MAXIMAL_RESOLUTION_OPTION = 'max'
+FRAMERATE_MULTIPLIER = 100
+
+
+class VideoCodec:
+    H264 = 'H.264'
+    H265 = 'H.265'
+    MJPEG = 'MJPEG'
 
 
 class VideoMode:
@@ -819,59 +828,69 @@ class VideoMode:
 
 
 class VideoCapabilities:
-    def __init__(self, width_list, height_list, framerate_list):
+    def __init__(self, width_list, height_list, framerate_list, codec_list):
         self.width_list = width_list
         self.height_list = height_list
         self.framerate_list = framerate_list
+        self.codec_list = codec_list
 
     def is_mode_supported(self, videomode):
         return self.width_list.count(videomode.width) != 0 \
                and self.height_list.count(videomode.height) != 0 \
                and self.framerate_list.count(videomode.framerate) != 0
 
+    def is_codec_supported(self, codec):
+        return self.codec_list.count(codec) != 0
+
+    def get_maximal_resolution_mode(self, framerate):
+        max_width = self.width_list[-1]
+        max_height = self.height_list[-1]
+        return VideoMode(max_width, max_height, framerate)
+
 
 class VideoChannel:
-    def __init__(self, stream_mode, channel_xml, stream_audio):
+    def __init__(self, stream_mode, codec, channel_xml, stream_audio):
         self.stream_mode = stream_mode
+        self.codec = codec
         self.channel_xml = channel_xml
         self.stream_audio = stream_audio
 
     def get_video_element(self):
         video_element = ElementTree.fromstring(self.channel_xml)
-        video_element = fill_video_parameters(video_element, self.stream_mode)
+        video_element = fill_video_parameters(video_element, self.stream_mode, self.codec)
         return video_element
 
 
 def set_video_streams(auth_type, cam_ip, password):
-    h264_description = '{}x{}x{}'.format(h264_stream_width, h264_stream_height, h264_stream_framerate)
-    mjpeg_description = '{}x{}x{}'.format(mjpeg_stream_width, mjpeg_stream_height, mjpeg_stream_framerate)
-
-    print('Video streams: H264 - {}, MJPEG - {}'.format(h264_description, mjpeg_description))
-
-    framerate_multiplier = 100
-
     request = requests.get(get_service_url(cam_ip, video_url), auth=get_auth(auth_type, admin_user_name, password))
     answer_text = clear_xml_from_namespaces(request.text)
     channel_list = ElementTree.fromstring(answer_text)
     channels = channel_list.findall('StreamingChannel')
-
-    h264_stream_mode = VideoMode(h264_stream_width, h264_stream_height, h264_stream_framerate * framerate_multiplier)
-    mjpeg_stream_mode = VideoMode(mjpeg_stream_width, mjpeg_stream_height, mjpeg_stream_framerate * framerate_multiplier)
     is_mode_supported = True
 
     for channel in channels:
         channel_id = channel.find('id').text
         capabilities = get_capabilities(channel_id, auth_type, cam_ip, password)
         if channel_id[-1:] == '1':
-            video_channel = VideoChannel(h264_stream_mode, video_h254_xml, record_audio)
+            h26x_stream_mode = get_video_mode(h26x_stream_width, h26x_stream_height, h26x_stream_framerate, capabilities)
+
+            if enable_h265_if_available and capabilities.is_codec_supported(VideoCodec.H265):
+                codec = VideoCodec.H265
+            else:
+                codec = VideoCodec.H264
+
+            video_channel = VideoChannel(h26x_stream_mode, codec, video_h26x_xml, record_audio)
         else:
-            video_channel = VideoChannel(mjpeg_stream_mode, video_mjpeg_xml, False)
+            mjpeg_stream_mode = get_video_mode(mjpeg_stream_width, mjpeg_stream_height, mjpeg_stream_framerate, capabilities)
+            video_channel = VideoChannel(mjpeg_stream_mode, VideoCodec.MJPEG, video_mjpeg_xml, False)
 
         if video_channel.stream_audio:
             audio_element = channel.find('Audio')
             if audio_element is not None:
                 enabled_element = audio_element.find('enabled')
                 enabled_element.text = 'true' if record_audio else 'false'
+
+        print_video_mode_info(video_channel)
 
         if capabilities.is_mode_supported(video_channel.stream_mode):
             replace_subelement_with(channel, video_channel.get_video_element())
@@ -892,28 +911,54 @@ def get_capabilities(channel_id, auth_type, cam_ip, password):
     answer_text = clear_xml_from_namespaces(request.text)
     channel_capabilities = ElementTree.fromstring(answer_text)
     video_capabilities = channel_capabilities.find('Video')
-    width_list = get_options_list(video_capabilities, 'videoResolutionWidth')
-    height_list = get_options_list(video_capabilities, 'videoResolutionHeight')
-    frame_rate_list = get_options_list(video_capabilities, 'maxFrameRate')
+    width_list = get_int_options_list(video_capabilities, 'videoResolutionWidth')
+    height_list = get_int_options_list(video_capabilities, 'videoResolutionHeight')
+    frame_rate_list = get_int_options_list(video_capabilities, 'maxFrameRate')
+    codec_list = get_str_options_list(video_capabilities, 'videoCodecType')
 
-    return VideoCapabilities(width_list, height_list, frame_rate_list)
+    return VideoCapabilities(width_list, height_list, frame_rate_list, codec_list)
 
 
-def get_options_list(element, tag):
+def get_video_mode(width, height, framerate, capabilities):
+    if width == MAXIMAL_RESOLUTION_OPTION or height == MAXIMAL_RESOLUTION_OPTION:
+        mode = capabilities.get_maximal_resolution_mode(framerate * FRAMERATE_MULTIPLIER)
+    else:
+        mode = VideoMode(width, height, framerate * FRAMERATE_MULTIPLIER)
+
+    return mode
+
+
+def get_str_options_list(element, tag):
     inner_element = element.find(tag)
     options_text = inner_element.attrib['opt']
-    options = list(map(int, options_text.split(',')))
+    options = options_text.split(',')
     return options
 
 
-def fill_video_parameters(element, videomode):
+def get_int_options_list(element, tag):
+    options = get_str_options_list(element, tag)
+    return list(map(int, options))
+
+
+def fill_video_parameters(element, videomode, codec):
     width_element = element.find('videoResolutionWidth')
-    height_element = element.find('videoResolutionHeight')
-    frame_rate_element = element.find('maxFrameRate')
     width_element.text = str(videomode.width)
+
+    height_element = element.find('videoResolutionHeight')
     height_element.text = str(videomode.height)
+
+    frame_rate_element = element.find('maxFrameRate')
     frame_rate_element.text = str(videomode.framerate)
+
+    codec_element = element.find('videoCodecType')
+    codec_element.text = codec
+
     return element
+
+
+def print_video_mode_info(video_channel):
+    mode = video_channel.stream_mode
+    print('Video stream: {} - {}x{}x{}'.format(video_channel.codec, mode.width, mode.height, int(mode.framerate / FRAMERATE_MULTIPLIER)))
 
 
 # =========================================== REBOOT =================================================
