@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2021-12-17
+# 2022-11-30
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -98,35 +98,35 @@ end_dst_hour = 0
 def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # UNCOMMENT NEEDED STEPS
 
-    # set_video_user(auth_type, current_cam_ip, current_password)
-    # set_ntp(auth_type, current_cam_ip, current_password)
-    # set_time(auth_type, current_cam_ip, current_password)
-    # set_osd(auth_type, current_cam_ip, current_password)
-    # set_off_ip_ban_option(auth_type, current_cam_ip, current_password)
-    # set_video_streams(auth_type, current_cam_ip, current_password)
-    # set_cloud_parameters(auth_type, current_cam_ip, current_password)
-    # disable_unneeded_event_triggers(auth_type, current_cam_ip, current_password)
+    set_video_user(auth_type, current_cam_ip, current_password)
+    set_ntp(auth_type, current_cam_ip, current_password)
+    set_time(auth_type, current_cam_ip, current_password)
+    set_osd(auth_type, current_cam_ip, current_password)
+    set_off_ip_ban_option(auth_type, current_cam_ip, current_password)
+    set_video_streams(auth_type, current_cam_ip, current_password)
+    set_cloud_parameters(auth_type, current_cam_ip, current_password)
+    disable_unneeded_event_triggers(auth_type, current_cam_ip, current_password)
 
     # =========== for offices - motion detection and so on ===============
-    # set_integration_protocol_enabled(auth_type, current_cam_ip, current_password)
-    # set_monitoring_user(auth_type, current_cam_ip, current_password)
-    # set_basic_auth_method(auth_type, current_cam_ip, current_password)
-    # set_device_name(auth_type, current_cam_ip, current_password, new_cam_ip)
-    # set_email_notification_addresses(auth_type, current_cam_ip, current_password, new_cam_ip)
-    # set_video_photo_ratio(auth_type, current_cam_ip, current_password)
-    # set_motion_detector_parameters(auth_type, current_cam_ip, current_password)
-    # format_storage(auth_type, current_cam_ip, current_password)
-    # set_email_event_triggers(auth_type, current_cam_ip, current_password)
-    # set_recording_by_motion_detector_trigger(auth_type, current_cam_ip, current_password)
-    # set_recording_schedule(auth_type, current_cam_ip, current_password)
-    # set_photo_capturing_parameters(auth_type, current_cam_ip, current_password)
+    set_integration_protocol_enabled(auth_type, current_cam_ip, current_password)
+    set_monitoring_user(auth_type, current_cam_ip, current_password)
+    set_basic_auth_method(auth_type, current_cam_ip, current_password)
+    set_device_name(auth_type, current_cam_ip, current_password, new_cam_ip)
+    set_email_notification_addresses(auth_type, current_cam_ip, current_password, new_cam_ip)
+    set_video_photo_ratio(auth_type, current_cam_ip, current_password)
+    set_motion_detector_parameters(auth_type, current_cam_ip, current_password)
+    format_storage(auth_type, current_cam_ip, current_password)
+    set_email_event_triggers(auth_type, current_cam_ip, current_password)
+    set_recording_by_motion_detector_trigger(auth_type, current_cam_ip, current_password)
+    set_recording_schedule(auth_type, current_cam_ip, current_password)
+    set_photo_capturing_parameters(auth_type, current_cam_ip, current_password)
     # ====================================================================
 
-    # print_user_list(auth_type, current_cam_ip, current_password)
+    print_user_list(auth_type, current_cam_ip, current_password)
     # enable_dhcp(auth_type, current_cam_ip, current_password)
-    # set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
-    # set_password(auth_type, current_cam_ip, current_password, admin_new_password)
-    # reboot_cam(auth_type, current_cam_ip)
+    set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
+    set_admin_password(auth_type, current_cam_ip, current_password, admin_new_password)
+    reboot_cam(auth_type, current_cam_ip)
     pass
 
 
@@ -199,9 +199,10 @@ web_authorization_type_url = '/ISAPI/Security/webCertificate'
 user_password_xml = """\
 <?xml version="1.0" encoding="UTF-8"?>
 <User>
-    <id>1</id>
-    <userName>admin</userName>
+    <id>id</id>
+    <userName>name</userName>
     <password>pass</password>
+    <loginPassword>admin_pass</loginPassword>    
 </User>
 """
 
@@ -211,6 +212,7 @@ add_user_xml = """\
     <userName>video</userName>
     <userLevel>Viewer</userLevel>
     <password>pass</password>
+    <loginPassword>admin_pass</loginPassword>
 </User>
 """
 
@@ -711,28 +713,6 @@ def get_service_url(cam_ip, relative_url):
     return 'http://' + cam_ip + relative_url
 
 
-# =========================================== PASSWORD =================================================
-
-def check_password(password):
-    if len(password) >= 8:
-        return True
-    else:
-        print('PASSWORD IS NOT SET, IT\'S TOO SHORT')
-        return False
-
-
-def set_password(auth_type, cam_ip, password, new_password):
-    if check_password(new_password):
-        request = ElementTree.fromstring(user_password_xml)
-
-        pass_element = request.find('password')
-        pass_element.text = new_password
-
-        request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
-
-        process_request(auth_type, cam_ip, password_url, password, request_data, 'Password set')
-
-
 # =========================================== NTP =================================================
 
 
@@ -1037,7 +1017,7 @@ def set_time(auth_type, cam_ip, password):
 
 
 def timezone_has_right_format(gmt_offset):
-    format_matched = re.match('[+,-]?\d{1,2}:\d{2}:\d{2}', gmt_offset)
+    format_matched = re.match(r'[+,-]?\d{1,2}:\d{2}:\d{2}', gmt_offset)
     return format_matched is not None
 
 
@@ -1209,11 +1189,23 @@ def process_activation_request(cam_ip, pass_encrypted_encoded):
 # ========================================= USER MANAGEMENT ===========================================================
 
 class User:
-    def __init__(self):
-        self.id = 0
-        self.name = ""
-        self.password = ""
-        self.is_valid = False
+    @classmethod
+    def default(cls):
+        return cls(0, "", "", False)
+
+    def __init__(self, id, name, password, is_valid):
+        self.id = id
+        self.name = name
+        self.password = password
+        self.is_valid = is_valid
+
+
+def check_password(password):
+    if len(password) >= 8:
+        return True
+    else:
+        print('PASSWORD IS NOT SET, IT\'S TOO SHORT')
+        return False
 
 
 def print_user_list(auth_type, cam_ip, admin_password):
@@ -1263,29 +1255,28 @@ def set_user_password(auth_type, cam_ip, admin_password, user):
     if check_password(user.password):
         user_element = ElementTree.fromstring(user_password_xml)
 
-        user_id_element = user_element.find('id')
-        user_id_element.text = user.id
-
-        user_name_element = user_element.find('userName')
-        user_name_element.text = user.name
-
-        password_element = user_element.find('password')
-        password_element.text = user.password
+        user_element.find('id').text = user.id
+        user_element.find('userName').text = user.name
+        user_element.find('password').text = user.password
+        user_element.find('loginPassword').text = admin_password
 
         request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
 
         process_request(auth_type, cam_ip, users_url, admin_password, request_text, "'{}' user password updating".format(user.name))
 
 
+def set_admin_password(auth_type, cam_ip, current_password, new_password):
+    user = User('1', 'admin', new_password, True)
+    set_user_password(auth_type, cam_ip, current_password, user)
+
+
 def add_user(auth_type, cam_ip, admin_password, user_name, user_password):
     if check_password(video_user_password):
         user_element = ElementTree.fromstring(add_user_xml)
 
-        user_name_element = user_element.find('userName')
-        user_name_element.text = user_name
-
-        password_element = user_element.find('password')
-        password_element.text = user_password
+        user_element.find('userName').text = user_name
+        user_element.find('password').text = user_password
+        user_element.find('loginPassword').text = admin_password
 
         request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
         answer = requests.post(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password), data=request_text)
@@ -1296,7 +1287,7 @@ def add_user(auth_type, cam_ip, admin_password, user_name, user_password):
         print('USER ISN\'T ADDED')
 
 
-def find_user(auth_type, cam_ip, admin_password, user_name):
+def find_user(auth_type, cam_ip, admin_password, username):
     request = requests.get(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password))
     answer_text = request.text
 
@@ -1305,19 +1296,17 @@ def find_user(auth_type, cam_ip, admin_password, user_name):
 
     user_elements = answer_xml.findall(namespace + 'User')
 
-    user = User()
+    user = User.default()
 
     for user_element in user_elements:
-        username_element = user_element.find(namespace + 'userName')
+        found_username_element = user_element.find(namespace + 'userName')
 
-        if username_element is not None:
-            username = username_element.text
-            if username == user_name:
+        if found_username_element is not None:
+            found_username = found_username_element.text
+            if found_username == username:
                 user_id_element = user_element.find(namespace + 'id')
                 if user_id_element is not None:
-                    user.id = user_id_element.text
-                    user.name = user_name
-                    user.is_valid = True
+                    user = User(user_id_element.text, username, "", True)
                     break
 
     return user
@@ -1588,7 +1577,6 @@ def set_shapshot_settings(auth_type, cam_ip, password):
     compress_element = timing_capture_element.find('compress')
     compress_element.find('quality').text = '80'
     compress_element.find('captureInterval').text = str(photo_capture_interval_minutes * 60000)
-    compress_element.find('captureNumber').text = '0'
 
     request_data = ElementTree.tostring(shapshot_channel_element, encoding='utf8', method='xml')
     process_request(auth_type, cam_ip, shapshot_channel_url, password, request_data, 'Photo capture enabling')
@@ -1840,12 +1828,12 @@ def parse_error_xml(answer_text):
 
 
 def get_namespace(element):
-    m = re.match("\{.*\}", element.tag)
+    m = re.match(r'{.*}', element.tag)
     return m.group(0) if m else ''
 
 
 def clear_xml_from_namespaces(xml_text):
-    return re.sub(' xmlns="[^"]+"', '', xml_text, count=0)
+    return re.sub(r' xmlns="[^"]+"', '', xml_text, count=0)
 
 
 def replace_subelement_with(parent, new_subelement):
