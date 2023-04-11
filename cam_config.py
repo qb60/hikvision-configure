@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2022-11-30
+# 2023-04-11
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -26,22 +26,27 @@ video_user_password = 'qwer1234'
 # True False
 allow_videouser_downloading_records = True
 
-monitoring_user_name = 'monuser'
-monitoring_user_password = '1234qwer'
+# additional users
+# [username, password, level]
+# level is 'Viewer' or 'Operator'
+add_users = [
+    ['monuser', '1234qwer', 'Viewer'],
+    ['operuser', '1234qwer', 'Operator'],
+]
 
 # 320,640,640,704,'max'
 # 240,360,480,576,'max'
 # 25,22,20,18,16,15,12,10,8,6,4,2,1
 mjpeg_stream_width = 640
 mjpeg_stream_height = 480
-mjpeg_stream_framerate = 6
+mjpeg_stream_framerate = 10
 
 # 1280,1920,2560,3072,3840,'max'
 # 720, 1080,1440,1728,2160,'max'
 # 15,12,10,8,6,4,2,1
 h26x_stream_width = 'max'
 h26x_stream_height = 'max'
-h26x_stream_framerate = 10
+h26x_stream_framerate = 15
 enable_h265_if_available = True
 
 # True False
@@ -109,7 +114,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
 
     # =========== for offices - motion detection and so on ===============
     set_integration_protocol_enabled(auth_type, current_cam_ip, current_password)
-    set_monitoring_user(auth_type, current_cam_ip, current_password)
+    set_additional_users(auth_type, current_cam_ip, current_password)
     set_basic_auth_method(auth_type, current_cam_ip, current_password)
     set_device_name(auth_type, current_cam_ip, current_password, new_cam_ip)
     set_email_notification_addresses(auth_type, current_cam_ip, current_password, new_cam_ip)
@@ -202,6 +207,7 @@ user_password_xml = """\
     <id>id</id>
     <userName>name</userName>
     <password>pass</password>
+    <userLevel>level</userLevel>
     <loginPassword>admin_pass</loginPassword>    
 </User>
 """
@@ -212,6 +218,7 @@ add_user_xml = """\
     <userName>video</userName>
     <userLevel>Viewer</userLevel>
     <password>pass</password>
+    <userLevel>level</userLevel>
     <loginPassword>admin_pass</loginPassword>
 </User>
 """
@@ -1228,30 +1235,63 @@ def print_user_list(auth_type, cam_ip, admin_password):
 
 
 def set_video_user(auth_type, cam_ip, admin_password):
-    user = add_or_update_user(auth_type, cam_ip, admin_password, video_user_name, video_user_password)
+    user = add_or_update_user(auth_type, cam_ip, admin_password, video_user_name, video_user_password, 'Viewer')
 
     if user.is_valid:
         set_video_user_permissions(auth_type, cam_ip, admin_password, user)
 
 
-def set_monitoring_user(auth_type, cam_ip, admin_password):
-    add_or_update_user(auth_type, cam_ip, admin_password, monitoring_user_name, monitoring_user_password)
+def set_additional_users(auth_type, cam_ip, admin_password):
+    print('Adding users...')
+    for user in add_users:
+        if len(user) == 3:
+            username = user[0]
+            user_password = user[1]
+            user_level = user[2]
+
+            user = add_or_update_user(auth_type, cam_ip, admin_password, username, user_password, user_level)
+
+            if user_level == 'Operator':
+                set_operator_permissions(auth_type, cam_ip, admin_password, user)
+        else:
+            print('WRONG user info "{}"!'.format(user))
 
 
-def add_or_update_user(auth_type, cam_ip, admin_password, user_name, user_password):
+def set_operator_permissions(auth_type, cam_ip, admin_password, user):
+    permissions = find_video_permissions(auth_type, cam_ip, admin_password, user)
+    id_element = permissions.find('id')
+    permissions_id = id_element.text
+
+    remote_permissions_element = permissions.find('remotePermission')
+
+    set_permission_recursive(remote_permissions_element)
+
+    request_text = ElementTree.tostring(permissions, encoding='utf8', method='xml')
+    process_request(auth_type, cam_ip, permissons_url + '/' + permissions_id, admin_password, request_text, "Set '{}' permissions".format(user.name))
+
+
+def set_permission_recursive(element):
+    for e in element:
+        set_permission_recursive(e)
+
+    if element.text == 'false':
+        element.text = 'true'
+
+
+def add_or_update_user(auth_type, cam_ip, admin_password, user_name, user_password, user_level):
     user = find_user(auth_type, cam_ip, admin_password, user_name)
 
     if user.is_valid:
         print("User '{}' is presented".format(user_name))
         user.password = user_password
-        set_user_password(auth_type, cam_ip, admin_password, user)
+        set_user_password_and_level(auth_type, cam_ip, admin_password, user, user_level)
         return user
     else:
-        add_user(auth_type, cam_ip, admin_password, user_name, user_password)
+        add_user(auth_type, cam_ip, admin_password, user_name, user_password, user_level)
         return find_user(auth_type, cam_ip, admin_password, user_name)
 
 
-def set_user_password(auth_type, cam_ip, admin_password, user):
+def set_user_password_and_level(auth_type, cam_ip, admin_password, user, user_level):
     if check_password(user.password):
         user_element = ElementTree.fromstring(user_password_xml)
 
@@ -1259,6 +1299,7 @@ def set_user_password(auth_type, cam_ip, admin_password, user):
         user_element.find('userName').text = user.name
         user_element.find('password').text = user.password
         user_element.find('loginPassword').text = admin_password
+        user_element.find('userLevel').text = user_level
 
         request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
 
@@ -1267,16 +1308,17 @@ def set_user_password(auth_type, cam_ip, admin_password, user):
 
 def set_admin_password(auth_type, cam_ip, current_password, new_password):
     user = User('1', 'admin', new_password, True)
-    set_user_password(auth_type, cam_ip, current_password, user)
+    set_user_password_and_level(auth_type, cam_ip, current_password, user, 'Administrator')
 
 
-def add_user(auth_type, cam_ip, admin_password, user_name, user_password):
+def add_user(auth_type, cam_ip, admin_password, user_name, user_password, user_level):
     if check_password(video_user_password):
         user_element = ElementTree.fromstring(add_user_xml)
 
         user_element.find('userName').text = user_name
         user_element.find('password').text = user_password
         user_element.find('loginPassword').text = admin_password
+        user_element.find('userLevel').text = user_level
 
         request_text = ElementTree.tostring(user_element, encoding='utf8', method='xml')
         answer = requests.post(get_service_url(cam_ip, users_url), auth=get_auth(auth_type, admin_user_name, admin_password), data=request_text)
@@ -1313,21 +1355,14 @@ def find_user(auth_type, cam_ip, admin_password, username):
 
 
 def set_video_user_permissions(auth_type, cam_ip, admin_password, user):
-    permissions_id = find_video_permissions_id(auth_type, cam_ip, admin_password, user)
-
-    permissions = ElementTree.fromstring(video_user_permissions_xml)
-
+    permissions = find_video_permissions(auth_type, cam_ip, admin_password, user)
     id_element = permissions.find('id')
-    id_element.text = permissions_id
-
-    user_id_element = permissions.find('userID')
-    user_id_element.text = user.id
+    permissions_id = id_element.text
 
     remote_permissions_element = permissions.find('remotePermission')
+    playback_element = remote_permissions_element.find('playBack')
 
     playback_permission_text = 'true' if allow_videouser_downloading_records else 'false'
-
-    playback_element = remote_permissions_element.find('playBack')
     playback_element.text = playback_permission_text
 
     videochannel_list_element = remote_permissions_element.find('videoChannelPermissionList')
@@ -1337,32 +1372,25 @@ def set_video_user_permissions(auth_type, cam_ip, admin_password, user):
 
     request_text = ElementTree.tostring(permissions, encoding='utf8', method='xml')
 
-    process_request(auth_type, cam_ip, permissons_url + '/' + user.id, admin_password, request_text, 'Video user permissions')
+    process_request(auth_type, cam_ip, permissons_url + '/' + permissions_id, admin_password, request_text, 'Video user permissions')
 
 
-def find_video_permissions_id(auth_type, cam_ip, admin_password, user):
+def find_video_permissions(auth_type, cam_ip, admin_password, user):
     request = requests.get(get_service_url(cam_ip, permissons_url), auth=get_auth(auth_type, admin_user_name, admin_password))
     answer_text = request.text
 
-    answer_xml = ElementTree.fromstring(answer_text)
-    namespace = get_namespace(answer_xml)
-
-    permissions_elements = answer_xml.findall(namespace + 'UserPermission')
-
-    permissions_id = 0
+    answer_xml = ElementTree.fromstring(clear_xml_from_namespaces(answer_text))
+    permissions_elements = answer_xml.findall('UserPermission')
 
     for permission_element in permissions_elements:
-        user_id_element = permission_element.find(namespace + 'userID')
+        user_id_element = permission_element.find('userID')
 
         if user_id_element is not None:
             user_id = user_id_element.text
             if user_id == user.id:
-                permissions_id_element = permission_element.find(namespace + 'id')
-                if permissions_id_element is not None:
-                    permissions_id = permissions_id_element.text
-                    break
+                return permission_element
 
-    return permissions_id
+    return None
 
 
 # =========================================== AUTHORIZATION =================================================
