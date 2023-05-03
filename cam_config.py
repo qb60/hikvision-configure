@@ -415,36 +415,6 @@ public_key_xml = """\
 </PublicKey>
 """
 
-video_user_permissions_xml = """\
-<UserPermission version="2.0">
-    <id>id</id>
-    <userID>userid</userID>
-    <userType>viewer</userType>
-    <remotePermission version="2.0">
-        <playBack></playBack>
-        <preview>true</preview>
-        <record>false</record>
-        <videoChannelPermissionList>
-            <videoChannelPermission>
-                <id>1</id>
-                <preview>true</preview>
-                <playBack></playBack>
-                <record>false</record>
-            </videoChannelPermission>
-        </videoChannelPermissionList>
-        <ptzControl>false</ptzControl>
-        <upgrade>false</upgrade>
-        <parameterConfig>false</parameterConfig>
-        <restartOrShutdown>false</restartOrShutdown>
-        <logOrStateCheck>false</logOrStateCheck>
-        <voiceTalk>false</voiceTalk>
-        <transParentChannel>false</transParentChannel>
-        <contorlLocalOut>false</contorlLocalOut>
-        <alarmOutOrUpload>false</alarmOutOrUpload>
-    </remotePermission>
-</UserPermission>
-"""
-
 device_info_xml = """\
 <DeviceInfo version="2.0">
     <deviceName>name</deviceName>
@@ -1365,10 +1335,16 @@ def set_video_user_permissions(auth_type, cam_ip, admin_password, user):
     playback_permission_text = 'true' if allow_videouser_downloading_records else 'false'
     playback_element.text = playback_permission_text
 
+    preview_element = remote_permissions_element.find('preview')
+    preview_element.text = 'true'
+
     videochannel_list_element = remote_permissions_element.find('videoChannelPermissionList')
     videochannel_element = videochannel_list_element.find('videoChannelPermission')
     playback_channel_element = videochannel_element.find('playBack')
     playback_channel_element.text = playback_permission_text
+
+    preview_channel_element = videochannel_element.find('preview')
+    preview_channel_element.text = 'true'
 
     request_text = ElementTree.tostring(permissions, encoding='utf8', method='xml')
 
