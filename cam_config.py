@@ -12,8 +12,9 @@
 # /usr/bin/python3 -m pip install --user pycryptodomex
 # /usr/bin/python3 -m pip install --user requests
 
-new_ntp = '10.10.10.10'
+device_name_prefix = 'PP'
 time_zone_gmt_offset = '+5:00:00'
+new_ntp = '10.10.10.10'
 
 admin_user_name = 'admin'
 admin_old_password = 'qwer1234'
@@ -1414,8 +1415,11 @@ def enable_basic_auth(auth_type, cam_ip, password):
 def set_device_name(auth_type, cam_ip, password, new_cam_ip):
     request = ElementTree.fromstring(device_info_xml)
 
+    device_name_prefix_formatted = '{}-'.format(device_name_prefix) if device_name_prefix != '' else ''
+    ip_for_device_name = choose_ip_for_information(cam_ip, new_cam_ip)
+
     device_name_element = request.find('deviceName')
-    device_name_element.text = choose_ip_for_information(cam_ip, new_cam_ip)
+    device_name_element.text = '{}{}'.format(device_name_prefix_formatted, ip_for_device_name)
 
     request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
 
