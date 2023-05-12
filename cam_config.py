@@ -128,7 +128,6 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     # ====================================================================
 
     print_user_list(auth_type, current_cam_ip, current_password)
-    # enable_dhcp(auth_type, current_cam_ip, current_password)
     set_ip_and_dns(auth_type, current_cam_ip, new_cam_ip, current_password)
     set_admin_password(auth_type, current_cam_ip, current_password, admin_new_password)
     reboot_cam(auth_type, current_cam_ip)
@@ -720,6 +719,10 @@ def set_ntp(auth_type, cam_ip, password):
 
 
 def set_ip_and_dns(auth_type, cam_ip, new_ip, password):
+    if new_ip == DHCP_OPTION:
+        enable_dhcp(auth_type, cam_ip, password)
+        return
+
     if new_ip is not None:
         request = ElementTree.fromstring(ip_address_xml)
 
@@ -742,7 +745,8 @@ def set_ip_and_dns(auth_type, cam_ip, new_ip, password):
         process_request(auth_type, cam_ip, ip_url, password, request_data, message, 'Reboot Required')
     else:
         print("New IP is not given, IP won't be changed")
-        set_dns(auth_type, cam_ip, password)
+
+    set_dns(auth_type, cam_ip, password)
 
 
 def enable_dhcp(auth_type, cam_ip, password):
@@ -779,6 +783,7 @@ def write_ip_to_xml(xml, tag_name, ip_value):
 
 # =========================================== VIDEO =================================================
 MAXIMAL_RESOLUTION_OPTION = 'max'
+DHCP_OPTION = 'dhcp'
 FRAMERATE_MULTIPLIER = 100
 
 
@@ -1775,18 +1780,12 @@ def print_device_info(auth_type, cam_ip, password):
 
 
 def choose_ip_for_information(current_ip, new_cam_ip):
-    if new_cam_ip is not None:
+    if new_cam_ip == DHCP_OPTION:
+        return DHCP_OPTION
+    elif new_cam_ip is not None:
         return str(new_cam_ip.ip)
     else:
         return current_ip
-
-
-def parse_ip(ip_with_mask):
-    if ip_with_mask.count('/') == 0:
-        ip_with_mask += '/24'
-
-    addr = ipaddress.ip_interface(str(ip_with_mask))
-    return addr
 
 
 def process_request(auth_type, cam_ip, request_url, password, request_data, operation, expected_status_text='OK'):
@@ -1927,27 +1926,49 @@ def check_dst():
 
 
 # ===========================================================================================================
+class CommandLineOptions:
+    def __init__(self, current_ip, new_ip):
+        self.current_ip = current_ip
+        self.new_ip = new_ip
+
+
+def parse_command_line_arguments(args):
+    current_ip = args[1]
+    if len(args) == 3:
+        ip_or_dhcp = args[2]
+        if ip_or_dhcp.lower() == DHCP_OPTION:
+            new_ip = DHCP_OPTION
+        else:
+            new_ip = parse_ip(ip_or_dhcp)
+    else:
+        new_ip = None
+
+    return CommandLineOptions(current_ip, new_ip)
+
+
+def parse_ip(ip_with_mask):
+    if ip_with_mask.count('/') == 0:
+        ip_with_mask += '/24'
+
+    return ipaddress.ip_interface(str(ip_with_mask))
+
 
 def main():
     if len(sys.argv) > 1:
-        current_cam_ip = sys.argv[1]
-        if len(sys.argv) == 3:
-            new_cam_ip = parse_ip(sys.argv[2])
-        else:
-            new_cam_ip = None
+        options = parse_command_line_arguments(sys.argv)
 
-        print('Processing cam %s:' % current_cam_ip)
+        print('Processing cam %s:' % options.current_ip)
 
         try:
             check_parameters()
 
-            current_password = set_activation(current_cam_ip)
-            auth_type = get_auth_type(current_cam_ip, current_password)
+            current_password = set_activation(options.current_ip)
+            auth_type = get_auth_type(options.current_ip, current_password)
             if auth_type == AuthType.UNAUTHORISED:
                 raise RuntimeError("Unauthorised! Check login and password")
 
-            print_device_info(auth_type, current_cam_ip, current_password)
-            set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip)
+            print_device_info(auth_type, options.current_ip, current_password)
+            set_cam_options(auth_type, options.current_ip, current_password, options.new_ip)
 
         except RuntimeError as e:
             print(e)
@@ -1960,8 +1981,12 @@ def main():
     else:
         print("USAGE:")
         print("    {} OLD_IP [NEW_IP/MASK]".format(sys.argv[0]))
-        print("Example:")
-        print("    {} 10.145.17.206 10.226.47.130/25".format(sys.argv[0]))
+        print("    {} OLD_IP [dhcp]".format(sys.argv[0]))
+        print()
+        print("Examples:")
+        print("    {} 10.10.10.10".format(sys.argv[0]))
+        print("    {} 10.10.10.10 10.10.11.10".format(sys.argv[0]))
+        print("    {} 10.10.10.10 dhcp".format(sys.argv[0]))
 
     print("")
 

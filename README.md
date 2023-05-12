@@ -8,6 +8,11 @@ Uncomment steps you need in **set_cam_options()** function.
 ```
 USAGE:
     ./cam_config.py OLD_IP [NEW_IP/MASK]
-Example:
-    ./cam_config.py 10.145.17.206 10.226.47.130/25
+    ./cam_config.py OLD_IP [dhcp]
+
+Examples:
+    ./cam_config.py 10.10.10.10
+    ./cam_config.py 10.10.10.10 10.10.11.10/25
+    ./cam_config.py 10.10.10.10 dhcp
+
 ```
