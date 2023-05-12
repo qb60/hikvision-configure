@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2023-05-10
+# 2023-05-12
 # MJPEG stream: /mjpeg/ch1/sub/av_stream
 # H264  stream: /h264/ch1/main/av_stream
 
@@ -1339,7 +1339,7 @@ def set_permissions(auth_type, cam_ip, admin_password, user, permission):
             playback_channel_element.text = 'true'
 
     request_text = ElementTree.tostring(permissions, encoding='utf8', method='xml')
-    process_request(auth_type, cam_ip, permissons_url + '/' + permissions_id, admin_password, request_text, 'Video user permissions')
+    process_request(auth_type, cam_ip, permissons_url + '/' + permissions_id, admin_password, request_text, "'{}' user permissions updating".format(user.name))
 
 
 def set_permission_recursive(element):
