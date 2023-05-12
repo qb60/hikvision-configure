@@ -1417,13 +1417,14 @@ def set_device_name(auth_type, cam_ip, password, new_cam_ip):
 
     device_name_prefix_formatted = '{}-'.format(device_name_prefix) if device_name_prefix != '' else ''
     ip_for_device_name = choose_ip_for_information(cam_ip, new_cam_ip)
+    device_name = '{}{}'.format(device_name_prefix_formatted, ip_for_device_name)
 
     device_name_element = request.find('deviceName')
-    device_name_element.text = '{}{}'.format(device_name_prefix_formatted, ip_for_device_name)
+    device_name_element.text = device_name
 
     request_data = ElementTree.tostring(request, encoding='utf8', method='xml')
 
-    process_request(auth_type, cam_ip, device_info_url, password, request_data, 'Device name set')
+    process_request(auth_type, cam_ip, device_info_url, password, request_data, 'Device name "{}" set'.format(device_name))
 
 
 # =========================================== EMAIL NOTIFICATIONS ADDRESSES =================================================
