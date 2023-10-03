@@ -2,9 +2,9 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2023-05-12
-# MJPEG stream: /mjpeg/ch1/sub/av_stream
-# H264  stream: /h264/ch1/main/av_stream
+# 2023-10-03
+# MAIN stream: /h264/ch1/main/av_stream
+# SUB  stream: /mjpeg/ch1/sub/av_stream
 
 # pip3 install --user pycryptodomex
 # pip3 install --user requests
@@ -35,23 +35,25 @@ additional_users = [
     ['operator', 'qwer1234', 'a'],
 ]
 
-# 320,640,640,704,'max'
-# 240,360,480,576,'max'
-# 25,22,20,18,16,15,12,10,8,6,4,2,1
-mjpeg_stream_width = 640
-mjpeg_stream_height = 480
-mjpeg_stream_framerate = 10
-
 # 1280,1920,2560,3072,3840,'max'
 # 720, 1080,1440,1728,2160,'max'
-# 15,12,10,8,6,4,2,1
-h26x_stream_width = 'max'
-h26x_stream_height = 'max'
-h26x_stream_framerate = 15
-enable_h265_if_available = True
+# 1,2,4,6,8,10,12,15,16,18,20,22,25
+# 'h265', 'h264', h265 fallbacks to h264 if not supported
+main_stream_width = 'max'
+main_stream_height = 'max'
+main_stream_framerate = 15
+main_stream_codec = 'h265'
+main_stream_audio = True
 
-# True False
-record_audio = True
+# 320,640,640,704,'max'
+# 240,360,480,576,'max'
+# 1,2,4,6,8,10,12,15,16,18,20,22,25
+# 'h265', 'h264', 'mjpeg', h265 fallbacks to h264 if not supported
+sub_stream_width = 640
+sub_stream_height = 480
+sub_stream_framerate = 10
+sub_stream_codec = 'mjpeg'
+sub_stream_audio = False
 
 primary_dns = '5.5.5.5'
 secondary_dns = '8.8.8.8'
@@ -345,53 +347,6 @@ osd_xml = """\
     <frontColorMode>auto</frontColorMode>
     <frontColor>000000</frontColor>
 </VideoOverlay>
-"""
-
-video_h26x_xml = """\
-<Video>
-    <enabled>true</enabled>
-    <videoInputChannelID>1</videoInputChannelID>
-    <videoCodecType>H.264</videoCodecType>
-    <videoScanType>progressive</videoScanType>
-    <videoResolutionWidth></videoResolutionWidth>
-    <videoResolutionHeight></videoResolutionHeight>
-    <videoQualityControlType>VBR</videoQualityControlType>
-    <constantBitRate>2048</constantBitRate>
-    <fixedQuality>60</fixedQuality>
-    <vbrUpperCap>2048</vbrUpperCap>
-    <vbrLowerCap>32</vbrLowerCap>
-    <maxFrameRate></maxFrameRate>
-    <keyFrameInterval>5000</keyFrameInterval>
-    <snapShotImageType>JPEG</snapShotImageType>
-    <H264Profile>Main</H264Profile>
-    <GovLength>50</GovLength>
-    <PacketType>PS</PacketType>
-    <PacketType>RTP</PacketType>
-    <smoothing>50</smoothing>
-</Video>
-"""
-
-video_mjpeg_xml = """\
-<Video>
-    <enabled>true</enabled>
-    <videoInputChannelID>1</videoInputChannelID>
-    <videoCodecType>MJPEG</videoCodecType>
-    <videoScanType>progressive</videoScanType>
-    <videoResolutionWidth></videoResolutionWidth>
-    <videoResolutionHeight></videoResolutionHeight>
-    <videoQualityControlType>VBR</videoQualityControlType>
-    <constantBitRate>256</constantBitRate>
-    <fixedQuality>60</fixedQuality>
-    <vbrUpperCap>256</vbrUpperCap>
-    <vbrLowerCap>32</vbrLowerCap>
-    <maxFrameRate></maxFrameRate>
-    <keyFrameInterval>8333</keyFrameInterval>
-    <snapShotImageType>JPEG</snapShotImageType>
-    <GovLength>50</GovLength>
-    <PacketType>PS</PacketType>
-    <PacketType>RTP</PacketType>
-    <smoothing>50</smoothing>
-</Video>
 """
 
 ip_ban_option_xml = """\
@@ -787,6 +742,12 @@ DHCP_OPTION = 'dhcp'
 FRAMERATE_MULTIPLIER = 100
 
 
+class VideoCodecOptions(Enum):
+    H264 = 'h264'
+    H265 = 'h265'
+    MJPEG = 'mjpeg'
+
+
 class VideoCodec:
     H264 = 'H.264'
     H265 = 'H.265'
@@ -822,16 +783,31 @@ class VideoCapabilities:
 
 
 class VideoChannel:
-    def __init__(self, stream_mode, codec, channel_xml, stream_audio):
+    def __init__(self, name, stream_mode, codec, initial_video_xml_element, stream_audio):
+        self.name = name
         self.stream_mode = stream_mode
         self.codec = codec
-        self.channel_xml = channel_xml
+        self.initial_video_xml_element = initial_video_xml_element
         self.stream_audio = stream_audio
 
     def get_video_element(self):
-        video_element = ElementTree.fromstring(self.channel_xml)
-        video_element = fill_video_parameters(video_element, self.stream_mode, self.codec)
+        video_element = self.fill_video_element(self.initial_video_xml_element, self.stream_mode, self.codec)
         return video_element
+
+    def fill_video_element(self, element, videomode, codec):
+        width_element = element.find('videoResolutionWidth')
+        width_element.text = str(videomode.width)
+
+        height_element = element.find('videoResolutionHeight')
+        height_element.text = str(videomode.height)
+
+        frame_rate_element = element.find('maxFrameRate')
+        frame_rate_element.text = str(videomode.framerate)
+
+        codec_element = element.find('videoCodecType')
+        codec_element.text = codec
+
+        return element
 
 
 def set_video_streams(auth_type, cam_ip, password):
@@ -844,24 +820,20 @@ def set_video_streams(auth_type, cam_ip, password):
     for channel in channels:
         channel_id = channel.find('id').text
         capabilities = get_capabilities(channel_id, auth_type, cam_ip, password)
+        channel_video = channel.find('Video')
         if channel_id[-1:] == '1':
-            h26x_stream_mode = get_video_mode(h26x_stream_width, h26x_stream_height, h26x_stream_framerate, capabilities)
-
-            if enable_h265_if_available and capabilities.is_codec_supported(VideoCodec.H265):
-                codec = VideoCodec.H265
-            else:
-                codec = VideoCodec.H264
-
-            video_channel = VideoChannel(h26x_stream_mode, codec, video_h26x_xml, record_audio)
+            video_mode = calculate_video_mode(main_stream_width, main_stream_height, main_stream_framerate, capabilities)
+            codec = option_to_videocodec(main_stream_codec, capabilities)
+            video_channel = VideoChannel('MAIN', video_mode, codec, channel_video, main_stream_audio)
         else:
-            mjpeg_stream_mode = get_video_mode(mjpeg_stream_width, mjpeg_stream_height, mjpeg_stream_framerate, capabilities)
-            video_channel = VideoChannel(mjpeg_stream_mode, VideoCodec.MJPEG, video_mjpeg_xml, False)
+            video_mode = calculate_video_mode(sub_stream_width, sub_stream_height, sub_stream_framerate, capabilities)
+            codec = option_to_videocodec(sub_stream_codec, capabilities)
+            video_channel = VideoChannel('SUB', video_mode, codec, channel_video, sub_stream_audio)
 
-        if video_channel.stream_audio:
-            audio_element = channel.find('Audio')
-            if audio_element is not None:
-                enabled_element = audio_element.find('enabled')
-                enabled_element.text = 'true' if record_audio else 'false'
+        audio_element = channel.find('Audio')
+        if audio_element is not None:
+            enabled_element = audio_element.find('enabled')
+            enabled_element.text = 'true' if video_channel.stream_audio else 'false'
 
         print_video_mode_info(video_channel)
 
@@ -892,7 +864,7 @@ def get_capabilities(channel_id, auth_type, cam_ip, password):
     return VideoCapabilities(width_list, height_list, frame_rate_list, codec_list)
 
 
-def get_video_mode(width, height, framerate, capabilities):
+def calculate_video_mode(width, height, framerate, capabilities):
     if width == MAXIMAL_RESOLUTION_OPTION or height == MAXIMAL_RESOLUTION_OPTION:
         mode = capabilities.get_maximal_resolution_mode(framerate * FRAMERATE_MULTIPLIER)
     else:
@@ -913,25 +885,21 @@ def get_int_options_list(element, tag):
     return list(map(int, options))
 
 
-def fill_video_parameters(element, videomode, codec):
-    width_element = element.find('videoResolutionWidth')
-    width_element.text = str(videomode.width)
+def option_to_videocodec(option, capabilities):
+    if option == VideoCodecOptions.MJPEG:
+        return VideoCodec.MJPEG
 
-    height_element = element.find('videoResolutionHeight')
-    height_element.text = str(videomode.height)
+    if option == VideoCodecOptions.H265 and capabilities.is_codec_supported(VideoCodec.H265):
+        return VideoCodec.H265
 
-    frame_rate_element = element.find('maxFrameRate')
-    frame_rate_element.text = str(videomode.framerate)
-
-    codec_element = element.find('videoCodecType')
-    codec_element.text = codec
-
-    return element
+    return VideoCodec.H264
 
 
 def print_video_mode_info(video_channel):
     mode = video_channel.stream_mode
-    print('Video stream: {} - {}x{}x{}'.format(video_channel.codec, mode.width, mode.height, int(mode.framerate / FRAMERATE_MULTIPLIER)))
+    framerate = int(mode.framerate / FRAMERATE_MULTIPLIER)
+    audio = 'AUDIO' if video_channel.stream_audio else 'NO AUDIO'
+    print('Video stream: {} - {}/{} - {}x{}x{}'.format(video_channel.name, video_channel.codec, audio, mode.width, mode.height, framerate))
 
 
 # =========================================== REBOOT =================================================
@@ -1870,6 +1838,7 @@ def check_parameters():
     check_admin_password()
     check_users_info(additional_users)
     check_dst()
+    check_video_modes()
 
 
 def check_admin_password():
@@ -1923,6 +1892,24 @@ def check_dst():
 
         if not is_end_param_valid:
             raise RuntimeError(message_template.format("end", end_dst))
+
+
+def check_video_modes():
+    print('Checking video modes...')
+    check_video_mode('main', main_stream_width, main_stream_height, main_stream_codec, [VideoCodecOptions.H264, VideoCodecOptions.H265])
+    check_video_mode('sub', sub_stream_width, sub_stream_height, sub_stream_codec, VideoCodecOptions.values())
+
+
+def check_video_mode(channel_name, width, height, codec, available_codecs):
+    if is_resolution_wrong(width) or is_resolution_wrong(height):
+        raise RuntimeError('Wrong resolution for {} stream: {} x {}'.format(channel_name, width, height))
+
+    if codec not in available_codecs:
+        raise RuntimeError('Wrong video codec for {} stream: {}'.format(channel_name, codec))
+
+
+def is_resolution_wrong(resolution):
+    return isinstance(resolution, str) and resolution != MAXIMAL_RESOLUTION_OPTION
 
 
 # ===========================================================================================================
