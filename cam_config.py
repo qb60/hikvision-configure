@@ -2,7 +2,7 @@
 # coding=utf-8
 
 # ======================= HIKVISION CAM SETUP ======================
-# 2023-10-03
+# 2023-10-04
 # MAIN stream: /h264/ch1/main/av_stream
 # SUB  stream: /mjpeg/ch1/sub/av_stream
 
@@ -54,6 +54,9 @@ sub_stream_height = 480
 sub_stream_framerate = 10
 sub_stream_codec = 'mjpeg'
 sub_stream_audio = False
+
+wdr_on = False
+wdr_level = 51
 
 primary_dns = '5.5.5.5'
 secondary_dns = '8.8.8.8'
@@ -114,6 +117,7 @@ def set_cam_options(auth_type, current_cam_ip, current_password, new_cam_ip):
     set_video_streams(auth_type, current_cam_ip, current_password)
     set_cloud_parameters(auth_type, current_cam_ip, current_password)
     disable_unneeded_event_triggers(auth_type, current_cam_ip, current_password)
+    set_wdr(auth_type, current_cam_ip, current_password)
 
     # =========== for offices - motion detection and so on ===============
     set_integration_protocol_enabled(auth_type, current_cam_ip, current_password)
@@ -164,6 +168,8 @@ ntp_url = '/ISAPI/System/time/ntpServers'
 osd_url = '/ISAPI/System/Video/inputs/channels/1/overlays'
 video_url = '/ISAPI/Streaming/channels'
 video_capabilities_url = '/ISAPI/Streaming/channels/{}/capabilities'
+wdr_url = '/ISAPI/Image/channels/1/WDR'
+image_capabilities_url = '/ISAPI/Image/channels/1/capabilities'
 ip_url = '/ISAPI/System/Network/interfaces/1/ipAddress'
 reboot_url = '/ISAPI/System/reboot'
 ip_ban_option_url = '/ISAPI/Security/illegalLoginLock'
@@ -754,6 +760,11 @@ class VideoCodec:
     MJPEG = 'MJPEG'
 
 
+class WDRMode:
+    ON = 'open'
+    OFF = 'close'
+
+
 class VideoMode:
     def __init__(self, width, height, framerate):
         self.width = width
@@ -780,6 +791,21 @@ class VideoCapabilities:
         max_width = self.width_list[-1]
         max_height = self.height_list[-1]
         return VideoMode(max_width, max_height, framerate)
+
+
+class ImageCapabilities:
+    def __init__(self, wdr):
+        self.wdr = wdr
+
+
+class WDRCapabilities:
+    def __init__(self, wdr_modes, wdr_level_range):
+        self.wdr_modes = wdr_modes
+        self.wdr_level_range = wdr_level_range
+
+    def is_mode_supported(self, mode, level):
+        (min_level, max_level) = self.wdr_level_range
+        return self.wdr_modes.count(mode) != 0 and min_level <= level <= max_level
 
 
 class VideoChannel:
@@ -819,7 +845,7 @@ def set_video_streams(auth_type, cam_ip, password):
 
     for channel in channels:
         channel_id = channel.find('id').text
-        capabilities = get_capabilities(channel_id, auth_type, cam_ip, password)
+        capabilities = get_video_capabilities(channel_id, auth_type, cam_ip, password)
         channel_video = channel.find('Video')
         if channel_id[-1:] == '1':
             video_mode = calculate_video_mode(main_stream_width, main_stream_height, main_stream_framerate, capabilities)
@@ -850,7 +876,7 @@ def set_video_streams(auth_type, cam_ip, password):
         print('VIDEO MODE IS NOT SUPPORTED BY CAMERA!')
 
 
-def get_capabilities(channel_id, auth_type, cam_ip, password):
+def get_video_capabilities(channel_id, auth_type, cam_ip, password):
     request_url = video_capabilities_url.format(channel_id)
     request = requests.get(get_service_url(cam_ip, request_url), auth=get_auth(auth_type, admin_user_name, password))
     answer_text = clear_xml_from_namespaces(request.text)
@@ -880,6 +906,13 @@ def get_str_options_list(element, tag):
     return options
 
 
+def get_int_options_range(element, tag):
+    inner_element = element.find(tag)
+    min_value = inner_element.attrib['min']
+    max_value = inner_element.attrib['max']
+    return int(min_value), int(max_value)
+
+
 def get_int_options_list(element, tag):
     options = get_str_options_list(element, tag)
     return list(map(int, options))
@@ -900,6 +933,50 @@ def print_video_mode_info(video_channel):
     framerate = int(mode.framerate / FRAMERATE_MULTIPLIER)
     audio = 'AUDIO' if video_channel.stream_audio else 'NO AUDIO'
     print('Video stream: {} - {}/{} - {}x{}x{}'.format(video_channel.name, video_channel.codec, audio, mode.width, mode.height, framerate))
+
+
+def set_wdr(auth_type, current_cam_ip, current_password):
+    image_capabilities = get_image_capabilities(auth_type, current_cam_ip, current_password)
+
+    if image_capabilities.wdr is None:
+        print("WDR isn't available in this camera")
+        return
+
+    capabilities = image_capabilities.wdr
+
+    wdr_mode = WDRMode.ON if wdr_on else WDRMode.OFF
+    if not capabilities.is_mode_supported(wdr_mode, wdr_level):
+        print('WDR SETTINGS (mode = {}, level = {}) ARE NOT SUPPORTED BY CAMERA!'.format(wdr_mode, wdr_level))
+        return
+
+    request = requests.get(get_service_url(current_cam_ip, wdr_url), auth=get_auth(auth_type, admin_user_name, current_password))
+    answer_text = clear_xml_from_namespaces(request.text)
+    wdr_element = ElementTree.fromstring(answer_text)
+
+    wdr_mode_element = wdr_element.find('mode')
+    wdr_mode_element.text = wdr_mode
+
+    wdr_level_element = wdr_element.find('WDRLevel')
+    wdr_level_element.text = str(wdr_level)
+
+    request_data = ElementTree.tostring(wdr_element, encoding='utf8', method='xml')
+    process_request(auth_type, current_cam_ip, wdr_url, current_password, request_data, 'WDR parameters set')
+
+
+def get_image_capabilities(auth_type, cam_ip, password):
+    request = requests.get(get_service_url(cam_ip, image_capabilities_url), auth=get_auth(auth_type, admin_user_name, password))
+    answer_text = clear_xml_from_namespaces(request.text)
+    image_capabilities_element = ElementTree.fromstring(answer_text)
+
+    wdr_capabilities_element = image_capabilities_element.find('WDR')
+    if wdr_capabilities_element is not None:
+        wdr_modes = get_str_options_list(wdr_capabilities_element, 'mode')
+        wdr_level_range = get_int_options_range(wdr_capabilities_element, 'WDRLevel')
+        wdr_capabilities = WDRCapabilities(wdr_modes, wdr_level_range)
+    else:
+        wdr_capabilities = None
+
+    return ImageCapabilities(wdr_capabilities)
 
 
 # =========================================== REBOOT =================================================
